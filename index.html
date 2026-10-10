@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12101c">
+  <title>Salon</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Hanken+Grotesk:wght@400..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='none' stroke='%23ffc65c' stroke-width='2' opacity='.45'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23ffc65c' stroke-width='2.5' opacity='.75'/%3E%3Ccircle cx='16' cy='16' r='4.5' fill='%238f8cff'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<!-- Giriş -->
+<section id="login" class="login">
+  <div class="login-art" aria-hidden="true">
+    <div class="rings"><i></i><i></i><i></i><b></b></div>
+  </div>
+  <form id="loginForm" class="login-form">
+    <h1 id="loginTitle">Salon</h1>
+    <p class="lead">Arkadaşlarla sesli oda. Kanala gir, konuş, istediğin an çık.</p>
+
+    <div class="tabs" role="tablist" aria-label="Giriş türü">
+      <button type="button" role="tab" id="tabLogin" aria-selected="true">Giriş yap</button>
+      <button type="button" role="tab" id="tabRegister" aria-selected="false">Kayıt ol</button>
+    </div>
+
+    <label for="nameInput">Kullanıcı adı</label>
+    <input id="nameInput" maxlength="20" required placeholder="Örn. Ayşe" autocomplete="username" autocapitalize="off" spellcheck="false">
+
+    <label for="passInput">Şifre</label>
+    <input id="passInput" type="password" required minlength="6" placeholder="En az 6 karakter" autocomplete="current-password">
+
+    <div id="pass2Field" hidden>
+      <label for="pass2Input">Şifre tekrar</label>
+      <input id="pass2Input" type="password" autocomplete="new-password">
+    </div>
+
+    <div id="codeField" hidden>
+      <label for="codeInput">Sunucu şifresi</label>
+      <input id="codeInput" type="password" placeholder="Sunucu sahibinden öğren" autocomplete="off">
+      <p class="hint" id="codeHint">Sunucu sahibinden öğren. Sadece kayıt olurken gerekir.</p>
+    </div>
+
+    <button class="btn primary" id="loginBtn" type="submit">Giriş yap</button>
+    <p id="loginStatus" class="hint status" role="status" hidden></p>
+    <p id="loginError" class="error" role="alert" hidden></p>
+  </form>
+</section>
+
+<!-- Uygulama -->
+<div id="app" class="app" hidden>
+  <aside id="side" class="side" aria-label="Kanallar">
+    <header class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <h1 id="serverName">Salon</h1>
+      <button class="icon-btn only-mobile" id="closeSide" aria-label="Kapat" data-icon="x"></button>
+    </header>
+
+    <div class="scroll">
+      <section class="group">
+        <h2>Metin kanalları</h2>
+        <ul id="textList" class="chan-list"></ul>
+      </section>
+      <section class="group">
+        <h2>Ses kanalları</h2>
+        <ul id="voiceList" class="chan-list"></ul>
+      </section>
+    </div>
+
+    <div id="voiceBar" class="voicebar" hidden>
+      <div class="vb-text">
+        <strong id="vbTitle">Ses bağlı</strong>
+        <span id="vbSub">0 kişi</span>
+      </div>
+      <button id="leaveVoice" class="icon-btn danger" aria-label="Ses kanalından ayrıl" title="Ayrıl" data-icon="logout"></button>
+    </div>
+
+    <footer class="me">
+      <button id="meBtn" class="me-id" aria-label="Ayarları aç">
+        <span id="meAvatar" class="avatar" data-uid="me"></span>
+        <span class="me-text"><strong id="meName"></strong><small id="meState">Çevrimiçi</small></span>
+      </button>
+      <button id="micBtn" class="icon-btn" aria-label="Mikrofonu kapat" aria-pressed="false" data-icon="mic"></button>
+      <button id="deafBtn" class="icon-btn" aria-label="Sesi kapat" aria-pressed="false" data-icon="headphones"></button>
+      <button id="settingsBtn" class="icon-btn" aria-label="Ayarlar" data-icon="sliders"></button>
+    </footer>
+  </aside>
+
+  <div id="scrim" class="scrim" hidden></div>
+
+  <main class="main">
+    <header class="top">
+      <button id="menuBtn" class="icon-btn only-mobile" aria-label="Kanalları aç" data-icon="menu"></button>
+      <span class="top-ico" id="chIcon" aria-hidden="true"></span>
+      <h2 id="chTitle"></h2>
+      <span id="chSub" class="top-sub"></span>
+      <span class="grow"></span>
+      <span id="netState" class="net" title="Bağlantı durumu"><i></i><span>Bağlanıyor</span></span>
+      <button id="membersBtn" class="icon-btn only-mobile" aria-label="Üyeler" data-icon="users"></button>
+    </header>
+
+    <div id="messages" class="messages" aria-live="polite"></div>
+
+    <form id="composer" class="composer" autocomplete="off">
+      <input id="msgInput" maxlength="2000" placeholder="Mesaj yaz" aria-label="Mesaj">
+      <button class="icon-btn send" type="submit" aria-label="Gönder" data-icon="send"></button>
+    </form>
+  </main>
+
+  <aside id="members" class="members" aria-label="Üyeler">
+    <header class="m-head">
+      <h2 id="memberTitle">Çevrimiçi</h2>
+      <button class="icon-btn only-mobile" id="closeMembers" aria-label="Kapat" data-icon="x"></button>
+    </header>
+    <ul id="memberList" class="member-list"></ul>
+    <p id="emptyHint" class="empty" hidden>Şu an kimse yok. Arkadaşların linke girip aynı davet koduyla katılınca burada görünürler.</p>
+  </aside>
+</div>
+
+<!-- Kullanıcı penceresi -->
+<dialog id="userDlg" class="dlg">
+  <form method="dialog">
+    <header class="dlg-head">
+      <span id="udAvatar" class="avatar big"></span>
+      <div>
+        <h3 id="udName"></h3>
+        <p id="udInfo" class="muted"></p>
+      </div>
+      <button class="icon-btn" value="close" aria-label="Kapat" data-icon="x"></button>
+    </header>
+    <div id="udVolume" class="field" hidden>
+      <label for="udVol">Ses seviyesi <output id="udVolOut">100%</output></label>
+      <input id="udVol" type="range" min="0" max="100" value="100">
+    </div>
+    <div id="udAdmin" class="admin-actions" hidden>
+      <p class="muted">Yönetici işlemleri</p>
+      <div class="row">
+        <button type="button" id="udMute" class="btn">Sustur</button>
+        <button type="button" id="udKick" class="btn danger">Ses kanalından çıkar</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<!-- Ayarlar -->
+<dialog id="settingsDlg" class="dlg">
+  <form method="dialog" id="settingsForm">
+    <header class="dlg-head">
+      <h3>Ayarlar</h3>
+      <button class="icon-btn" value="close" aria-label="Kapat" data-icon="x"></button>
+    </header>
+
+    <div class="field">
+      <label>Hesap</label>
+      <p id="setAccount" class="muted"></p>
+    </div>
+
+    <div class="field">
+      <label for="setMic">Mikrofon</label>
+      <select id="setMic"><option value="">Varsayılan</option></select>
+      <p class="hint">Cihaz listesi mikrofona bir kez izin verdikten sonra tam görünür.</p>
+    </div>
+
+    <div class="field check">
+      <input id="setSounds" type="checkbox">
+      <label for="setSounds">Katılma ve ayrılma sesleri</label>
+    </div>
+
+    <div class="row end">
+      <button type="button" id="logoutBtn" class="btn danger">Çıkış yap</button>
+      <button class="btn primary" value="save" id="saveSettings">Kaydet</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
