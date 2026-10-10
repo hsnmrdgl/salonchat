@@ -7,8 +7,8 @@
 
 export default {
   // Supabase panelinde: Project Settings > API (ya da Data API) bölümünden.
-  supabaseUrl: 'https://DEGISTIR.supabase.co',
-  supabaseAnonKey: 'DEGISTIR-anon-ya-da-publishable-anahtar',
+  supabaseUrl: 'https://bigurkbwvmozfljqecww.supabase.co',
+  supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpZ3Vya2J3dm1vemZsanFlY3d3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2NTk1ODEsImV4cCI6MjEwNzIzNTU4MX0.BXcSwL_UrxhPNbVw2kepl-iMnWUkDGqzhzq9fZp-GKQ',
 
   // Sol üstte görünen ad
   serverName: 'Salon',
