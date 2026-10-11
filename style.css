@@ -222,6 +222,19 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .composer .send:disabled { color: var(--faint); cursor: not-allowed; }
 .composer .send:disabled:hover { background: transparent; }
 
+/* ---------- Görseller ---------- */
+.composer .attach { margin-left: -8px; }
+.attach-bar { display: flex; align-items: center; gap: 10px; margin: 8px 16px 0; padding: 8px 8px 8px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.attach-bar img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; background: var(--bg); }
+.attach-bar img:not([src]) { visibility: hidden; }
+.attach-bar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; }
+.chat-img { display: block; margin-top: 6px; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; cursor: zoom-in; color: var(--muted); font-size: 13px; max-width: min(100%, 420px); }
+.chat-img img { display: block; max-width: 100%; max-height: 320px; margin: 0 auto; }
+.chat-img.loading { padding: 36px 18px; cursor: default; }
+.lightbox { padding: 0; border: 0; background: transparent; max-width: 96vw; max-height: 96vh; overflow: visible; }
+.lightbox::backdrop { background: rgba(8, 6, 16, .86); }
+.lightbox img { display: block; max-width: 96vw; max-height: 92vh; border-radius: 12px; cursor: zoom-out; }
+
 /* ---------- Üyeler ---------- */
 .members { background: var(--side); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .m-head { display: flex; align-items: center; justify-content: space-between; height: 54px; padding: 0 14px; border-bottom: 1px solid var(--line); }
@@ -281,6 +294,7 @@ input[type="range"] { padding: 0; accent-color: var(--accent); }
   .login { grid-template-columns: 1fr; }
   .login-art { display: none; }
   .composer { margin: 8px 10px calc(12px + env(safe-area-inset-bottom)); }
+  .attach-bar { margin: 8px 10px 0; }
   .top { padding: 0 8px 0 10px; }
 }
 
