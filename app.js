@@ -69,6 +69,7 @@ const textIds = new Set(textChannels.map(c => c.id))
 const voiceIds = new Set(voiceChannels.map(c => c.id))
 const allChannels = [...textChannels, ...voiceChannels]
 const chanName = id => allChannels.find(c => c.id === id)?.name || id
+const adminOnly = new Set(allChannels.filter(c => c.adminOnly).map(c => c.id)) // sadece yöneticilerin yazabildiği kanallar
 
 const S = {
   id: '',
@@ -138,6 +139,7 @@ async function verifyHex(sigHex, text, pkHex) {
   try { return await ed.verifyAsync(unhex(sigHex), enc.encode(text), unhex(pkHex)) } catch { return false }
 }
 const isAdmin = () => S.admin
+const isAdminName = name => S.dir.get(keyName(name))?.admin === true // hesap dizinine göre bu ad yöneticiye mi ait
 
 const configured = () => /^https:\/\//.test(CONFIG.supabaseUrl || '') && !!CONFIG.supabaseAnonKey && !/DEGISTIR/i.test((CONFIG.supabaseUrl || '') + (CONFIG.supabaseAnonKey || ''))
 
@@ -334,6 +336,7 @@ function addMessage(m, { silent = false } = {}) {
 function sendMessage(text) {
   text = text.trim()
   if (!text || !S.view) return
+  if (adminOnly.has(S.view) && !isAdmin()) return toast('Bu kanala sadece yöneticiler yazabilir.', 'err')
   const msg = { id: rand(), ch: S.view, text: text.slice(0, 2000), ts: Date.now(), name: S.name }
   addMessage({ ...msg, from: S.id })
   A.chat?.send(msg)
@@ -353,6 +356,7 @@ function onHistory(d, peerId) {
   if (!d || !Array.isArray(d.m)) return
   for (const raw of d.m.slice(0, 300)) {
     const m = cleanMsg(raw, raw?.from)
+    if (m && adminOnly.has(m.ch) && !isAdminName(m.name)) continue // duyuru kanalına yönetici dışı mesaj girmez
     if (m) addMessage(m, { silent: true })
   }
 }
@@ -380,7 +384,8 @@ function renderMessages({ stick = false } = {}) {
   box.textContent = ''
   const list = S.history.get(S.view) || []
   if (!list.length) {
-    box.append(h('p', { class: 'empty', text: 'Burada henüz mesaj yok. İlk mesajı sen yaz.' }))
+    const readOnly = adminOnly.has(S.view) && !isAdmin()
+    box.append(h('p', { class: 'empty', text: readOnly ? 'Burada henüz duyuru yok.' : 'Burada henüz mesaj yok. İlk mesajı sen yaz.' }))
     return
   }
   box.append(h('div', { class: 'spacer' }))
@@ -677,11 +682,27 @@ function renderMembers() {
   const ul = $('#memberList')
   ul.textContent = ''
   for (const p of people) {
+    // data-uid verilmez: konuşma halkası burada değil, yalnızca soldaki kanal listesinde görünür
     ul.append(h('li', {}, h('button', { class: 'member', onclick: () => openUser(p.id) },
-      avatar(p.name, p.self ? 'me' : p.id),
+      avatar(p.name, null),
       h('span', { class: 'meta' },
         h('strong', {}, p.name, S.adminIds.has(p.id) ? [' ', h('span', { class: 'badge', text: 'Yönetici' })] : null),
         h('small', { text: p.ch ? 'Sesli: ' + chanName(p.ch) : 'Çevrimiçi' })))))
+  }
+
+  // Kayıtlı ama şu an bağlı olmayan hesaplar (hesap dizininden) kalıcı olarak çevrimdışı görünür
+  const online = new Set(people.map(p => keyName(p.name)))
+  const offline = [...S.dir.values()]
+    .filter(e => !online.has(keyName(e.name)))
+    .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+  if (!offline.length) return
+  ul.append(h('li', { class: 'm-sec', text: 'Çevrimdışı (' + offline.length + ')' }))
+  for (const e of offline) {
+    ul.append(h('li', {}, h('div', { class: 'member off' },
+      avatar(e.name, null),
+      h('span', { class: 'meta' },
+        h('strong', {}, e.name, e.admin ? [' ', h('span', { class: 'badge', text: 'Yönetici' })] : null),
+        h('small', { text: 'Çevrimdışı' })))))
   }
 }
 
@@ -713,10 +734,15 @@ function renderVoiceBar() {
 
 function renderHeader() {
   const isVoice = voiceIds.has(S.view)
+  const locked = adminOnly.has(S.view) && !isAdmin()
   $('#chIcon').innerHTML = ico(isVoice ? 'speaker' : 'hash')
   $('#chTitle').textContent = chanName(S.view) || ''
-  $('#chSub').textContent = isVoice ? 'Ses kanalı, mesajlar burada da yazılabilir' : 'Metin kanalı'
-  $('#msgInput').placeholder = chanName(S.view) + ' kanalına yaz'
+  $('#chSub').textContent = isVoice ? 'Ses kanalı, mesajlar burada da yazılabilir' : adminOnly.has(S.view) ? 'Duyuru kanalı, sadece yöneticiler yazabilir' : 'Metin kanalı'
+  const input = $('#msgInput')
+  input.disabled = locked
+  input.placeholder = locked ? 'Bu kanala sadece yöneticiler yazabilir' : chanName(S.view) + ' kanalına yaz'
+  $('#composer .send').disabled = locked
+  $('#composer').classList.toggle('locked', locked)
 }
 
 function viewChannel(id) {
@@ -887,7 +913,9 @@ async function boot(me) {
     const p = S.peers.get(peerId)
     if (!p?.ready) return // kimliği doğrulanmamış kişinin mesajı alınmaz
     const m = cleanMsg(d, peerId, p.name)
-    if (m) addMessage(m)
+    if (!m) return
+    if (adminOnly.has(m.ch) && !S.adminIds.has(peerId)) return // duyuru kanalına yönetici dışı mesaj girmez
+    addMessage(m)
   }
   A.hist.onMessage = (d, { peerId }) => onHistory(d, peerId)
   A.cmd.onMessage = (d, { peerId }) => onCmd(d, peerId)
