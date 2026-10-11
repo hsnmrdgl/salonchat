@@ -107,7 +107,15 @@
 
     <div id="messages" class="messages" aria-live="polite"></div>
 
+    <div id="attachBar" class="attach-bar" hidden>
+      <img id="attachThumb" alt="">
+      <span id="attachName"></span>
+      <button type="button" id="attachClear" class="icon-btn" aria-label="Görseli kaldır" data-icon="x"></button>
+    </div>
+
     <form id="composer" class="composer" autocomplete="off">
+      <button type="button" id="attachBtn" class="icon-btn attach" aria-label="Görsel ekle" title="Görsel ekle" data-icon="image"></button>
+      <input type="file" id="fileInput" accept="image/*" hidden>
       <input id="msgInput" maxlength="2000" placeholder="Mesaj yaz" aria-label="Mesaj">
       <button class="icon-btn send" type="submit" aria-label="Gönder" data-icon="send"></button>
     </form>
@@ -280,6 +288,11 @@
       <button type="submit" id="resetSubmit" class="btn primary">Şifreyi değiştir</button>
     </div>
   </form>
+</dialog>
+
+<!-- Görsel büyütme -->
+<dialog id="imgDlg" class="lightbox">
+  <img id="imgBig" alt="Büyütülmüş görsel">
 </dialog>
 
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
