@@ -216,17 +216,26 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .composer input { border: 0; background: transparent; padding: 10px 0; }
 .composer input:focus { outline: none; }
 .composer .send { color: var(--accent); }
+.composer.locked { opacity: .6; }
+.composer.locked:focus-within { border-color: var(--line); }
+.composer input:disabled { cursor: not-allowed; }
+.composer .send:disabled { color: var(--faint); cursor: not-allowed; }
+.composer .send:disabled:hover { background: transparent; }
 
 /* ---------- Üyeler ---------- */
 .members { background: var(--side); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .m-head { display: flex; align-items: center; justify-content: space-between; height: 54px; padding: 0 14px; border-bottom: 1px solid var(--line); }
 .m-head h2 { font: 600 14px/1 var(--body); color: var(--muted); }
 .member-list { flex: 1; overflow-y: auto; padding: 8px; }
+.m-sec { padding: 14px 8px 6px; font: 600 12px/1 var(--body); color: var(--faint); }
 .member { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border: 0; background: transparent; border-radius: 9px; text-align: left; }
 .member:hover { background: var(--surface); }
 .member .meta { display: flex; flex-direction: column; min-width: 0; }
 .member .meta strong { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .member .meta small { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member.off { opacity: .5; cursor: default; }
+.member.off:hover { background: transparent; }
+.member.off .avatar { filter: grayscale(.7); }
 
 /* ---------- Pencereler ---------- */
 .dlg { width: min(440px, calc(100vw - 32px)); padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); color: var(--text); }
