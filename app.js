@@ -121,8 +121,13 @@ const normName = n => String(n || '').normalize('NFC').replace(/\s+/g, ' ').trim
 // Veritabanındaki salon.name_key ile aynı kural: büyük/küçük harf ve i/ı/İ farkı yok sayılır
 const keyName = n => normName(n).replace(/[İIı]/g, 'i').toLowerCase()
 const NAME_RE = /^[A-Za-z0-9çğıöşüÇĞİÖŞÜ][A-Za-z0-9çğıöşüÇĞİÖŞÜ ._-]{1,19}$/
+// Mevcut hesapların adı 2-20 karakter olabilir: giriş ve dizin okuma bu kuralı kullanır
 const validName = n => NAME_RE.test(n)
+// Yeni kayıt ve ad değiştirme için en az 6 karakter
+const MIN_NEW_NAME = 6
+const validNewName = n => validName(n) && n.length >= MIN_NEW_NAME
 const NAME_RULE = 'Kullanıcı adı 2-20 karakter olmalı. Harf (Türkçe dahil), rakam, boşluk, nokta, tire ve alt çizgi kullanılabilir.'
+const NEW_NAME_RULE = 'Kullanıcı adı 6-20 karakter olmalı. Harf (Türkçe dahil), rakam, boşluk, nokta, tire ve alt çizgi kullanılabilir.'
 
 const idText = peerId => 'id|' + peerId + '|' + APP_ID
 const cmdText = c => ['cmd', c.t, c.target, c.arg, c.ts, c.n].join('|')
@@ -141,10 +146,11 @@ const ERR = {
   locked: 'Çok fazla yanlış deneme yapıldı. 10 dakika sonra tekrar dene.',
   name_taken: 'Bu kullanıcı adı alınmış. Başka bir ad seç.',
   bad_server_password: 'Sunucu şifresi yanlış.',
-  invalid_name: NAME_RULE,
+  invalid_name: NEW_NAME_RULE,
   weak_password: 'Şifre 6-72 karakter olmalı.',
   invalid_key: 'Kimlik anahtarı oluşturulamadı. Sayfayı yenileyip tekrar dene.',
-  no_session: 'Oturum açılamadı. Sayfayı yenileyip tekrar dene.'
+  no_session: 'Oturum açılamadı. Sayfayı yenileyip tekrar dene.',
+  bad_reset: 'Kullanıcı adı ya da kod yanlış, ya da kodun süresi dolmuş. Yöneticiden yeni kod iste.'
 }
 
 async function loadLibs() {
@@ -174,7 +180,7 @@ async function rpc(fn, args) {
   const { data, error } = await sb.rpc(fn, args)
   if (!error) return data
   console.warn(error)
-  if (error.code === 'PGRST202' || /could not find the function/i.test(error.message)) throw new AuthError('Supabase kurulumu eksik: supabase/setup.sql çalıştırılmamış.')
+  if (error.code === 'PGRST202' || /could not find the function/i.test(error.message)) throw new AuthError('Supabase kurulumu eksik: supabase/setup.sql ve update-1.1.sql çalıştırılmamış.')
   if (/jwt|token/i.test(error.message)) throw new AuthError('Oturum süresi doldu. Sayfayı yenileyip tekrar giriş yap.')
   throw new AuthError('Sunucuya ulaşılamadı: ' + error.message)
 }
@@ -261,7 +267,7 @@ async function onPresence(d, peerId) {
   if (!entry) {
     if (await refreshDir()) entry = S.dir.get(keyName(name))
     else if (!retryingPresence.has(peerId)) {
-      // dizin az önce yenilendi; yeni kayıt olmuş biri olabilir, biraz sonra bir kez daha dene
+      // dizin az önce yenilendi; yeni kayıt olmuş ya da adını değiştirmiş biri olabilir, biraz sonra bir kez daha dene
       retryingPresence.add(peerId)
       setTimeout(() => { retryingPresence.delete(peerId); onPresence(d, peerId) }, 9000)
       return
@@ -787,6 +793,33 @@ function saveSettings() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Kullanıcı adı değiştirme ve şifre sıfırlama                         */
+/* ------------------------------------------------------------------ */
+
+// Oturumu açık kullanıcı adını değiştirir. Diğer kişiler yeni adı hesap dizininden doğrular;
+// dizin yenilenene kadar presence mesajı onPresence içinde birkaç saniye bekletilir.
+async function renameAccount(newName, password) {
+  const res = await rpc('salon_rename', { p_new: newName, p_password: password })
+  if (!res?.ok) throw new AuthError(ERR[res?.error] || 'İşlem başarısız oldu.')
+  S.name = normName(res.me.username)
+  S.key = keyName(S.name)
+  LS.set('name', S.name)
+  broadcastPresence()
+  dirAt = 0
+  await refreshDir()
+  renderAll()
+}
+
+// Giriş yapmamış kullanıcı, yöneticinin verdiği kodla yeni şifre belirler
+async function resetPassword(name, code, password) {
+  if (!configured()) throw new AuthError("config.js içine Supabase adresini ve anahtarını yaz (README, 2. adım).")
+  await loadLibs()
+  await ensureSession()
+  const res = await rpc('salon_reset_password', { p_username: name, p_code: code, p_new: password })
+  if (!res?.ok) throw new AuthError(ERR[res?.error] || 'İşlem başarısız oldu.')
+}
+
+/* ------------------------------------------------------------------ */
 /* Bildirimler, bağlantı durumu, çekmeceler                            */
 /* ------------------------------------------------------------------ */
 
@@ -920,6 +953,7 @@ function showApp() {
   $('#app').hidden = false
   document.title = CONFIG.serverName || 'Salon'
   $('#serverName').textContent = CONFIG.serverName || 'Salon'
+  $('#serverVer').textContent = CONFIG.version ? 'v' + CONFIG.version : ''
   renderHeader()
   renderMe()
 }
@@ -991,6 +1025,9 @@ function wire() {
     $('#pass2Input').required = m === 'register'
     $('#codeField').hidden = m !== 'register'
     $('#codeInput').required = m === 'register'
+    $('#nameHint').hidden = m !== 'register'
+    $('#nameInput').minLength = m === 'register' ? MIN_NEW_NAME : 0
+    $('#forgotBtn').hidden = m !== 'login'
     $('#passInput').autocomplete = m === 'register' ? 'new-password' : 'current-password'
     $('#loginBtn').textContent = m === 'register' ? 'Kayıt ol' : 'Giriş yap'
     $('#loginError').hidden = true
@@ -1006,7 +1043,9 @@ function wire() {
     e.preventDefault()
     $('#loginError').hidden = true
     const name = normName($('#nameInput').value)
-    if (!validName(name)) return showLoginError(NAME_RULE)
+    if (mode === 'register') {
+      if (!validNewName(name)) return showLoginError(NEW_NAME_RULE)
+    } else if (!validName(name)) return showLoginError(NAME_RULE)
     const password = $('#passInput').value
     if (password.length < 6) return showLoginError('Şifre en az 6 karakter olmalı.')
     let code = ''
@@ -1016,6 +1055,79 @@ function wire() {
       if (!code) return showLoginError('Sunucu şifresini yaz.')
     }
     enter({ mode, name, password, code })
+  })
+
+  // şifremi unuttum
+  $('#forgotBtn').addEventListener('click', () => {
+    $('#resetErr').hidden = true
+    $('#resetName').value = normName($('#nameInput').value)
+    $('#resetDlg').showModal()
+  })
+  $('#resetCancel').addEventListener('click', () => $('#resetDlg').close())
+  $('#resetForm').addEventListener('submit', async e => {
+    e.preventDefault()
+    const err = $('#resetErr')
+    const fail = msg => { err.hidden = false; err.textContent = msg }
+    err.hidden = true
+    const name = normName($('#resetName').value)
+    const code = $('#resetCode').value.trim()
+    const pass = $('#resetPass').value
+    if (!validName(name)) return fail(NAME_RULE)
+    if (!code) return fail('Yöneticiden aldığın kodu yaz.')
+    if (pass.length < 6) return fail('Şifre en az 6 karakter olmalı.')
+    if (pass !== $('#resetPass2').value) return fail('Şifreler aynı değil.')
+    const btn = $('#resetSubmit')
+    btn.disabled = true
+    try {
+      await resetPassword(name, code, pass)
+      $('#resetDlg').close()
+      $('#resetForm').reset()
+      $('#nameInput').value = name
+      $('#passInput').value = ''
+      setMode('login')
+      const st = $('#loginStatus')
+      st.hidden = false
+      st.textContent = 'Şifren değişti. Yeni şifrenle giriş yapabilirsin.'
+    } catch (x) {
+      console.warn(x)
+      fail(x instanceof AuthError ? x.message : 'İşlem başarısız oldu.')
+    } finally {
+      btn.disabled = false
+    }
+  })
+
+  // kullanıcı adı değiştirme
+  $('#renameBtn').addEventListener('click', () => {
+    $('#settingsDlg').close()
+    $('#renameErr').hidden = true
+    $('#renameInput').value = S.name
+    $('#renamePass').value = ''
+    $('#renameDlg').showModal()
+  })
+  $('#renameCancel').addEventListener('click', () => $('#renameDlg').close())
+  $('#renameForm').addEventListener('submit', async e => {
+    e.preventDefault()
+    const err = $('#renameErr')
+    const fail = msg => { err.hidden = false; err.textContent = msg }
+    err.hidden = true
+    const name = normName($('#renameInput').value)
+    const pass = $('#renamePass').value
+    if (name === S.name) return fail('Bu zaten şu anki kullanıcı adın.')
+    if (!validNewName(name)) return fail(NEW_NAME_RULE)
+    if (!pass) return fail('Onay için şifreni yaz.')
+    const btn = $('#renameSubmit')
+    btn.disabled = true
+    try {
+      await renameAccount(name, pass)
+      $('#renameDlg').close()
+      $('#renamePass').value = ''
+      toast('Kullanıcı adın değişti.')
+    } catch (x) {
+      console.warn(x)
+      fail(x instanceof AuthError ? x.message : 'İşlem başarısız oldu.')
+    } finally {
+      btn.disabled = false
+    }
   })
 
   $('#composer').addEventListener('submit', e => {
