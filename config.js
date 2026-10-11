@@ -13,6 +13,9 @@ export default {
   // Sol üstte görünen ad
   serverName: 'Salon',
 
+  // Sol üstte adın yanında küçük yazıyla görünen sürüm. Her güncellemede elle artır.
+  version: '1.1.0',
+
   // Kanallar. id'ler sabit kalmalı, name istediğin gibi olabilir.
   textChannels: [
     { id: 'genel', name: 'genel' },
