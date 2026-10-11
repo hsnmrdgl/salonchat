@@ -53,6 +53,7 @@ const ICONS = {
   hash: svg('<line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/>'),
   speaker: svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>'),
   speakerOff: svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" x2="17" y1="9" y2="15"/><line x1="17" x2="23" y1="9" y2="15"/>'),
+  image: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>'),
   menu: svg('<line x1="4" x2="20" y1="7" y2="7"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="17" y2="17"/>'),
   users: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
   send: svg('<line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>'),
@@ -72,6 +73,7 @@ const allChannels = [...textChannels, ...voiceChannels]
 const chanName = id => allChannels.find(c => c.id === id)?.name || id
 const adminOnly = new Set(allChannels.filter(c => c.adminOnly).map(c => c.id)) // sadece yöneticilerin yazabildiği kanallar
 const RETENTION = 7 * 24 * 3600e3 // mesajlar en fazla 1 hafta saklanır (sunucu da 7 günden eskiyi siler)
+const IMG_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']) // SVG bilerek yok: içinde kod olabilir
 
 const S = {
   id: '',
@@ -105,6 +107,7 @@ const S = {
   seed: null,
   seenNonces: new Set(),
   deleted: new Set(), // silinen mesaj kimlikleri (eski bir yenilemeyle geri gelmesin diye)
+  imgs: new Map(), // mesaj kimliği -> görselin data adresi (son kullanılanlar bellekte tutulur)
   speak: new Map()
 }
 
@@ -168,7 +171,8 @@ const ERR = {
   rate_limited: 'Çok hızlı mesaj yazıyorsun, biraz bekle.',
   invalid_message: 'Mesaj 1-2000 karakter olmalı.',
   invalid_channel: 'Geçersiz kanal.',
-  forbidden: 'Bu mesajı silme yetkin yok.'
+  forbidden: 'Bu mesajı silme yetkin yok.',
+  invalid_image: 'Görsel geçersiz ya da çok büyük (en fazla yaklaşık 1 MB). JPEG, PNG, GIF ve WebP desteklenir.'
 }
 
 async function loadLibs() {
@@ -327,10 +331,11 @@ function cleanMsg(d, from, forcedName) {
   const ch = str(d.ch, 40)
   if (!textIds.has(ch)) return null // mesajlar yalnızca metin kanallarına yazılır
   const text = str(d.text, 2000)
-  if (!text.trim()) return null
+  const img = IMG_TYPES.has(d.img) ? d.img : null // görsel varsa türü; görselin kendisi ayrıca istenir
+  if (!text.trim() && !img) return null
   const id = str(d.id, 64)
   if (!id) return null
-  return { id, ch, text, ts: Number.isFinite(d.ts) ? d.ts : Date.now(), name: forcedName || str(d.name, 24) || 'Misafir', from: str(from, 80) }
+  return { id, ch, text, img, ts: Number.isFinite(d.ts) ? d.ts : Date.now(), name: forcedName || str(d.name, 24) || 'Misafir', from: str(from, 80) }
 }
 
 function addMessage(m, { silent = false } = {}) {
@@ -347,22 +352,177 @@ function addMessage(m, { silent = false } = {}) {
   return true
 }
 
+/* ---- Görseller ---- */
+
+const MAX_IMG_BYTES = 1024 * 1024 // gönderilecek görselin üst sınırı (sunucu da kontrol eder)
+const IMG_CACHE_MAX = 40
+const imgFetch = new Map()
+let pending = null // gönderilmeyi bekleyen görsel: { type, b64, url, size }
+let preparing = false
+
+const fmtSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'
+const toBlob = (canvas, type, q) => new Promise(res => canvas.toBlob(res, type, q))
+const blobToBase64 = blob => new Promise((res, rej) => {
+  const r = new FileReader()
+  r.onload = () => res(String(r.result).split(',')[1] || '')
+  r.onerror = () => rej(r.error)
+  r.readAsDataURL(blob)
+})
+
+// WebP kodlaması olmayan tarayıcıda toBlob sessizce PNG döner; o durumda şeffaflık beyaza çevrilip JPEG'e düşülür
+async function encodeCanvas(canvas, q) {
+  const b = await toBlob(canvas, 'image/webp', q)
+  if (b && b.type === 'image/webp') return b
+  const ctx = canvas.getContext('2d')
+  ctx.globalCompositeOperation = 'destination-over'
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  return toBlob(canvas, 'image/jpeg', q)
+}
+
+// Görseli göndermeye uygun hale getirir: büyükse küçültür ve sıkıştırır. Küçük JPEG/PNG/WebP ile küçük GIF olduğu gibi gider.
+async function prepareImage(file) {
+  if (!file.type.startsWith('image/')) throw new AuthError('Bu bir görsel dosyası değil.')
+  let note = ''
+  if (file.type === 'image/gif') {
+    if (file.size <= MAX_IMG_BYTES) return { type: 'image/gif', blob: file, note }
+    note = 'GIF çok büyük, animasyon olmadan ilk karesi gönderilecek.'
+  }
+  let bmp
+  try { bmp = await createImageBitmap(file) } catch { throw new AuthError('Bu görsel biçimi desteklenmiyor. JPEG, PNG, GIF ya da WebP dene.') }
+  const longest = Math.max(bmp.width, bmp.height)
+  if (['image/jpeg', 'image/png', 'image/webp'].includes(file.type) && file.size <= 700 * 1024 && longest <= 1600) {
+    bmp.close?.()
+    return { type: file.type, blob: file, note }
+  }
+  for (const [dim, q] of [[1600, 0.85], [1280, 0.75], [960, 0.65], [720, 0.6]]) {
+    const scale = Math.min(1, dim / longest)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bmp.width * scale))
+    canvas.height = Math.max(1, Math.round(bmp.height * scale))
+    canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height)
+    const blob = await encodeCanvas(canvas, q)
+    if (blob && IMG_TYPES.has(blob.type) && blob.size <= MAX_IMG_BYTES) { bmp.close?.(); return { type: blob.type, blob, note } }
+  }
+  bmp.close?.()
+  throw new AuthError('Görsel çok büyük, yeterince küçültülemedi.')
+}
+
+function clearPending() {
+  if (pending?.url) URL.revokeObjectURL(pending.url)
+  pending = null
+  $('#attachBar').hidden = true
+}
+
+async function setPending(file) {
+  if (!file || preparing) return
+  if (!textIds.has(S.view)) return
+  if (adminOnly.has(S.view) && !isAdmin()) return toast(ERR.admin_only, 'err')
+  preparing = true
+  const bar = $('#attachBar')
+  bar.hidden = false
+  $('#attachThumb').removeAttribute('src')
+  $('#attachName').textContent = 'Görsel hazırlanıyor…'
+  try {
+    const { type, blob, note } = await prepareImage(file)
+    const b64 = await blobToBase64(blob)
+    clearPending()
+    pending = { type, b64, url: URL.createObjectURL(blob), size: blob.size }
+    bar.hidden = false
+    $('#attachThumb').src = pending.url
+    $('#attachName').textContent = (file.name || 'Görsel') + ' · ' + fmtSize(blob.size)
+    if (note) toast(note)
+    $('#msgInput').focus()
+  } catch (e) {
+    console.warn(e)
+    clearPending()
+    toast(e instanceof AuthError ? e.message : 'Görsel hazırlanamadı.', 'err')
+  } finally {
+    preparing = false
+  }
+}
+
+function cacheImg(id, url) {
+  S.imgs.delete(id)
+  S.imgs.set(id, url)
+  while (S.imgs.size > IMG_CACHE_MAX) S.imgs.delete(S.imgs.keys().next().value)
+}
+
+function fetchImage(id) {
+  const hit = S.imgs.get(id)
+  if (hit) return Promise.resolve(hit)
+  if (!imgFetch.has(id)) {
+    imgFetch.set(id, (async () => {
+      try {
+        const r = await rpc('salon_message_image', { p_id: id })
+        if (r?.data && IMG_TYPES.has(r.type)) {
+          const url = 'data:' + r.type + ';base64,' + r.data
+          cacheImg(id, url)
+          return url
+        }
+      } catch (e) { console.warn(e) } finally { imgFetch.delete(id) }
+      return null
+    })())
+  }
+  return imgFetch.get(id)
+}
+
+// Resimler sonradan yüklenince yükseklik değişir; sohbet en alttaysa en altta kalsın
+function keepBottom() {
+  const box = $('#messages')
+  if (box.dataset.stuck === '1') box.scrollTop = box.scrollHeight
+}
+
+function chatImage(m) {
+  const wrap = h('button', { type: 'button', class: 'chat-img', 'aria-label': 'Görseli büyüt' })
+  const show = url => {
+    wrap.classList.remove('loading')
+    wrap.textContent = ''
+    const im = h('img', { src: url, alt: 'Gönderilen görsel' })
+    im.addEventListener('load', keepBottom)
+    wrap.append(im)
+  }
+  wrap.addEventListener('click', () => { const u = S.imgs.get(m.id); if (u) openImage(u) })
+  const cached = S.imgs.get(m.id)
+  if (cached) show(cached)
+  else {
+    wrap.classList.add('loading')
+    wrap.textContent = 'Görsel yükleniyor…'
+    fetchImage(m.id).then(url => {
+      if (url) show(url)
+      else { wrap.classList.remove('loading'); wrap.textContent = 'Görsel yüklenemedi' }
+    })
+  }
+  return wrap
+}
+
+function openImage(url) {
+  $('#imgBig').src = url
+  $('#imgDlg').showModal()
+}
+
 // Mesaj önce sunucuya kaydedilir (7 gün saklanır), sonra anında görünsün diye odadakilere de yayınlanır.
-async function sendMessage(text) {
+async function sendMessage(text, img = null) {
   text = text.trim()
   const ch = S.view
-  if (!text || !textIds.has(ch)) return false
+  if ((!text && !img) || !textIds.has(ch)) return false
   if (adminOnly.has(ch) && !isAdmin()) { toast(ERR.admin_only, 'err'); return false }
   let res
-  try { res = await rpc('salon_send_message', { p_channel: ch, p_text: text.slice(0, 2000) }) } catch (e) {
+  try {
+    res = img
+      ? await rpc('salon_send_image', { p_channel: ch, p_text: text.slice(0, 2000), p_type: img.type, p_data: img.b64 })
+      : await rpc('salon_send_message', { p_channel: ch, p_text: text.slice(0, 2000) })
+  } catch (e) {
     toast(e instanceof AuthError ? e.message : 'Mesaj gönderilemedi.', 'err')
     return false
   }
   if (!res?.ok) { toast(ERR[res?.error] || 'Mesaj gönderilemedi.', 'err'); return false }
   const m = cleanMsg(res.msg, S.id, S.name)
   if (!m) return false
+  if (img) cacheImg(m.id, 'data:' + img.type + ';base64,' + img.b64) // gönderen için hemen görünsün
   addMessage(m)
-  A.chat?.send({ id: m.id, ch: m.ch, text: m.text, ts: m.ts, name: S.name })
+  // Görselin kendisi yayınlanmaz, yalnızca türü: alıcılar sunucudan çeker
+  A.chat?.send({ id: m.id, ch: m.ch, text: m.text, img: m.img, ts: m.ts, name: S.name })
   return true
 }
 
@@ -462,7 +622,7 @@ function renderMessages({ stick = false } = {}) {
     const gutter = grouped
       ? h('div', { class: 'gutter' }, h('small', { text: fmtTime(m.ts) }))
       : h('div', { class: 'gutter' }, h('span', { class: 'avatar', style: `--h:${hueOf(m.name)}`, text: initial(m.name) }))
-    const body = h('div', { class: 'body' }, linkify(m.text))
+    const body = h('div', { class: 'body' }, m.text ? linkify(m.text) : null, m.img ? chatImage(m) : null)
     const content = grouped
       ? h('div', {}, body)
       : h('div', {},
@@ -474,6 +634,7 @@ function renderMessages({ stick = false } = {}) {
     box.append(h('div', { class: 'msg' + (grouped ? '' : ' first') }, gutter, content, del))
     prev = m
   }
+  box.dataset.stuck = (stick || nearBottom) ? '1' : '0'
   box.scrollTop = (stick || nearBottom) ? box.scrollHeight : oldTop
 }
 
@@ -951,6 +1112,7 @@ function renderHeader() {
   input.disabled = locked
   input.placeholder = locked ? 'Bu kanala sadece yöneticiler yazabilir' : chanName(S.view) + ' kanalına yaz'
   $('#composer .send').disabled = locked
+  $('#attachBtn').disabled = locked
   $('#composer').classList.toggle('locked', locked)
 }
 
@@ -1460,14 +1622,45 @@ function wire() {
     }
   })
 
+  // mesaj gönderme: görsel varsa birlikte gider; gönderilemezse yazdığın ve görsel kaybolmaz
+  let sending = false
   $('#composer').addEventListener('submit', async e => {
     e.preventDefault()
+    if (sending || preparing) return
     const input = $('#msgInput')
     const text = input.value
-    input.value = ''
-    // gönderilemezse yazdığın kaybolmasın
-    if (!(await sendMessage(text)) && !input.value) input.value = text
+    sending = true
+    try {
+      if (await sendMessage(text, pending)) {
+        if (input.value === text) input.value = ''
+        clearPending()
+      }
+    } finally {
+      sending = false
+    }
   })
+
+  // görsel ekleme: düğme, yapıştırma (Ctrl+V) ve sürükle-bırak
+  $('#attachBtn').addEventListener('click', () => $('#fileInput').click())
+  $('#fileInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; setPending(f) })
+  $('#attachClear').addEventListener('click', clearPending)
+  $('#msgInput').addEventListener('paste', e => {
+    const f = [...(e.clipboardData?.files || [])].find(x => x.type.startsWith('image/'))
+    if (f) { e.preventDefault(); setPending(f) }
+  })
+  const main = $('.main')
+  main.addEventListener('dragover', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault() })
+  main.addEventListener('drop', e => {
+    const f = [...(e.dataTransfer?.files || [])].find(x => x.type.startsWith('image/'))
+    if (!f) return
+    e.preventDefault()
+    setPending(f)
+  })
+  $('#messages').addEventListener('scroll', e => {
+    const b = e.target
+    b.dataset.stuck = b.scrollHeight - b.scrollTop - b.clientHeight < 90 ? '1' : '0'
+  })
+  $('#imgDlg').addEventListener('click', () => $('#imgDlg').close())
 
   $('#micBtn').addEventListener('click', toggleMute)
   $('#deafBtn').addEventListener('click', toggleDeaf)
