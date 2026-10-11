@@ -71,6 +71,7 @@ const voiceIds = new Set(voiceChannels.map(c => c.id))
 const allChannels = [...textChannels, ...voiceChannels]
 const chanName = id => allChannels.find(c => c.id === id)?.name || id
 const adminOnly = new Set(allChannels.filter(c => c.adminOnly).map(c => c.id)) // sadece yöneticilerin yazabildiği kanallar
+const RETENTION = 7 * 24 * 3600e3 // mesajlar en fazla 1 hafta saklanır (sunucu da 7 günden eskiyi siler)
 
 const S = {
   id: '',
@@ -88,7 +89,7 @@ const S = {
   srvMuted: new Set(),
   history: new Map(),
   unread: new Set(),
-  view: (textChannels[0] || voiceChannels[0] || {}).id,
+  view: (textChannels[0] || {}).id, // sesli kanallarda metin yok, görünüm hep bir metin kanalıdır
   me: { muted: false, deaf: false, mutedBefore: false, ch: null },
   voice: null,
   joining: false,
@@ -103,6 +104,7 @@ const S = {
   },
   seed: null,
   seenNonces: new Set(),
+  deleted: new Set(), // silinen mesaj kimlikleri (eski bir yenilemeyle geri gelmesin diye)
   speak: new Map()
 }
 
@@ -161,7 +163,12 @@ const ERR = {
   weak_password: 'Şifre 6-72 karakter olmalı.',
   invalid_key: 'Kimlik anahtarı oluşturulamadı. Sayfayı yenileyip tekrar dene.',
   no_session: 'Oturum açılamadı. Sayfayı yenileyip tekrar dene.',
-  bad_reset: 'Kullanıcı adı ya da kod yanlış, ya da kodun süresi dolmuş. Yöneticiden yeni kod iste.'
+  bad_reset: 'Kullanıcı adı ya da kod yanlış, ya da kodun süresi dolmuş. Yöneticiden yeni kod iste.',
+  admin_only: 'Bu kanala sadece yöneticiler yazabilir.',
+  rate_limited: 'Çok hızlı mesaj yazıyorsun, biraz bekle.',
+  invalid_message: 'Mesaj 1-2000 karakter olmalı.',
+  invalid_channel: 'Geçersiz kanal.',
+  forbidden: 'Bu mesajı silme yetkin yok.'
 }
 
 async function loadLibs() {
@@ -191,7 +198,7 @@ async function rpc(fn, args) {
   const { data, error } = await sb.rpc(fn, args)
   if (!error) return data
   console.warn(error)
-  if (error.code === 'PGRST202' || /could not find the function/i.test(error.message)) throw new AuthError('Supabase kurulumu eksik: supabase/setup.sql ve update-1.1.sql çalıştırılmamış.')
+  if (error.code === 'PGRST202' || /could not find the function/i.test(error.message)) throw new AuthError('Supabase kurulumu eksik: supabase klasöründeki SQL dosyaları (setup.sql, update-1.1.sql, update-1.2.sql) sırayla çalıştırılmamış.')
   if (/jwt|token/i.test(error.message)) throw new AuthError('Oturum süresi doldu. Sayfayı yenileyip tekrar giriş yap.')
   throw new AuthError('Sunucuya ulaşılamadı: ' + error.message)
 }
@@ -254,10 +261,6 @@ function applyCmd(cmd) {
       if (cmd.target === S.id) { toast('Yönetici susturmanı kaldırdı.'); refreshMic() }
       refreshRemoteAudio(cmd.target)
       renderAll()
-      break
-    case 'del':
-      for (const [ch, list] of S.history) S.history.set(ch, list.filter(m => m.id !== cmd.arg))
-      renderMessages()
       break
   }
 }
@@ -322,7 +325,7 @@ function roster() {
 function cleanMsg(d, from, forcedName) {
   if (!d || typeof d !== 'object') return null
   const ch = str(d.ch, 40)
-  if (!textIds.has(ch) && !voiceIds.has(ch)) return null
+  if (!textIds.has(ch)) return null // mesajlar yalnızca metin kanallarına yazılır
   const text = str(d.text, 2000)
   if (!text.trim()) return null
   const id = str(d.id, 64)
@@ -331,43 +334,96 @@ function cleanMsg(d, from, forcedName) {
 }
 
 function addMessage(m, { silent = false } = {}) {
+  if (S.deleted.has(m.id) || m.ts < Date.now() - RETENTION) return false
+  if (!m.at) m.at = Date.now() // canlı geldiği an, sunucu yenilemesi bu mesajı kısa süre korur
   const list = S.history.get(m.ch) || []
   if (list.some(x => x.id === m.id)) return false
   list.push(m)
   list.sort((a, b) => a.ts - b.ts)
   if (list.length > 200) list.splice(0, list.length - 200)
   S.history.set(m.ch, list)
-  if (m.ch === S.view) renderMessages({ stick: m.from === S.id })
+  if (m.ch === S.view) renderMessages({ stick: keyName(m.name) === S.key })
   else if (!silent) { S.unread.add(m.ch); renderChannels() }
   return true
 }
 
-function sendMessage(text) {
+// Mesaj önce sunucuya kaydedilir (7 gün saklanır), sonra anında görünsün diye odadakilere de yayınlanır.
+async function sendMessage(text) {
   text = text.trim()
-  if (!text || !S.view) return
-  if (adminOnly.has(S.view) && !isAdmin()) return toast('Bu kanala sadece yöneticiler yazabilir.', 'err')
-  const msg = { id: rand(), ch: S.view, text: text.slice(0, 2000), ts: Date.now(), name: S.name }
-  addMessage({ ...msg, from: S.id })
-  A.chat?.send(msg)
-}
-
-function sendHistoryTo(id) {
-  // Yeni gelene geçmişi, odadaki en küçük kimlikli kişi gönderir (tekrarı azaltmak için)
-  const ids = [S.id, ...[...S.peers.keys()].filter(p => p !== id)].sort()
-  if (ids[0] !== S.id) return
-  const msgs = [...S.history.values()].flat().sort((a, b) => a.ts - b.ts).slice(-200)
-  if (!msgs.length) return
-  A.hist.send({ m: msgs.map(({ id, ch, text, ts, name, from }) => ({ id, ch, text, ts, name, from })) }, { target: id })
-}
-
-function onHistory(d, peerId) {
-  if (!S.peers.get(peerId)?.ready) return
-  if (!d || !Array.isArray(d.m)) return
-  for (const raw of d.m.slice(0, 300)) {
-    const m = cleanMsg(raw, raw?.from)
-    if (m && adminOnly.has(m.ch) && !isAdminName(m.name)) continue // duyuru kanalına yönetici dışı mesaj girmez
-    if (m) addMessage(m, { silent: true })
+  const ch = S.view
+  if (!text || !textIds.has(ch)) return false
+  if (adminOnly.has(ch) && !isAdmin()) { toast(ERR.admin_only, 'err'); return false }
+  let res
+  try { res = await rpc('salon_send_message', { p_channel: ch, p_text: text.slice(0, 2000) }) } catch (e) {
+    toast(e instanceof AuthError ? e.message : 'Mesaj gönderilemedi.', 'err')
+    return false
   }
+  if (!res?.ok) { toast(ERR[res?.error] || 'Mesaj gönderilemedi.', 'err'); return false }
+  const m = cleanMsg(res.msg, S.id, S.name)
+  if (!m) return false
+  addMessage(m)
+  A.chat?.send({ id: m.id, ch: m.ch, text: m.text, ts: m.ts, name: S.name })
+  return true
+}
+
+const findMessage = id => { for (const l of S.history.values()) { const m = l.find(x => x.id === id); if (m) return m } return null }
+
+function removeMessage(id) {
+  S.deleted.add(id)
+  for (const [ch, list] of S.history) {
+    const next = list.filter(x => x.id !== id)
+    if (next.length !== list.length) S.history.set(ch, next)
+  }
+  renderMessages()
+}
+
+// Silme yetkisini sunucu verir: yazarın kendisi ya da yönetici
+async function deleteMessage(m) {
+  let res
+  try { res = await rpc('salon_delete_message', { p_id: m.id }) } catch (e) {
+    return toast(e instanceof AuthError ? e.message : 'Mesaj silinemedi.', 'err')
+  }
+  if (!res?.ok) return toast(ERR[res?.error] || 'Mesaj silinemedi.', 'err')
+  removeMessage(m.id)
+  A.mdel?.send({ id: m.id })
+}
+
+// Sunucudaki son 7 günün mesajlarını getirir ve yerel listeyi buna eşitler. Başlangıçta, sonra 30 saniyede bir
+// ve sekmeye dönünce çalışır; kaçırılan mesajlar ve silmeler böylece yakalanır.
+async function loadMessages({ first = false } = {}) {
+  if (!S.live) return
+  let list
+  try { list = await rpc('salon_messages') } catch (e) {
+    console.warn(e)
+    if (first) toast('Mesaj geçmişi yüklenemedi: ' + (e?.message || e), 'err')
+    return
+  }
+  if (!Array.isArray(list)) return
+  const now = Date.now()
+  const known = new Set([...S.history.values()].flat().map(m => m.id))
+  const before = (S.history.get(S.view) || []).map(m => m.id).join()
+  const next = new Map()
+  const put = m => { const l = next.get(m.ch) || []; l.push(m); next.set(m.ch, l) }
+  for (const raw of list) {
+    const m = cleanMsg(raw, '', normName(str(raw?.name, 40)))
+    if (m && !S.deleted.has(m.id) && m.ts >= now - RETENTION) put(m)
+  }
+  // az önce canlı gelip henüz listede görünmeyen mesajları koru; sunucuda hiç olmayan (sahte) mesajlar bu süre sonunda düşer
+  for (const l of S.history.values()) {
+    for (const m of l) {
+      if (m.at && now - m.at < 15000 && !S.deleted.has(m.id) && !(next.get(m.ch) || []).some(x => x.id === m.id)) put(m)
+    }
+  }
+  for (const l of next.values()) {
+    l.sort((a, b) => a.ts - b.ts)
+    if (l.length > 200) l.splice(0, l.length - 200)
+  }
+  S.history = next
+  if (!first) {
+    for (const [ch, l] of next) if (ch !== S.view && l.some(m => !known.has(m.id) && keyName(m.name) !== S.key)) S.unread.add(ch)
+  }
+  if ((S.history.get(S.view) || []).map(m => m.id).join() !== before) renderMessages()
+  renderChannels()
 }
 
 function linkify(text) {
@@ -400,8 +456,9 @@ function renderMessages({ stick = false } = {}) {
   box.append(h('div', { class: 'spacer' }))
   let prev = null
   for (const m of list) {
-    const grouped = prev && prev.from === m.from && prev.name === m.name && m.ts - prev.ts < 5 * 60e3
-    const del = isAdmin() ? h('button', { class: 'icon-btn del', 'aria-label': 'Mesajı sil', title: 'Mesajı sil', html: ico('x'), onclick: () => sendCmd('del', '', m.id) }) : null
+    const grouped = prev && prev.name === m.name && m.ts - prev.ts < 5 * 60e3
+    const mine = keyName(m.name) === S.key
+    const del = (isAdmin() || mine) ? h('button', { class: 'icon-btn del', 'aria-label': 'Mesajı sil', title: mine ? 'Mesajını sil' : 'Mesajı sil', html: ico('x'), onclick: () => deleteMessage(m) }) : null
     const gutter = grouped
       ? h('div', { class: 'gutter' }, h('small', { text: fmtTime(m.ts) }))
       : h('div', { class: 'gutter' }, h('span', { class: 'avatar', style: `--h:${hueOf(m.name)}`, text: initial(m.name) }))
@@ -411,7 +468,7 @@ function renderMessages({ stick = false } = {}) {
       : h('div', {},
         h('div', { class: 'head' },
           h('span', { class: 'who', text: m.name }),
-          S.adminIds.has(m.from) ? h('span', { class: 'badge', text: 'Yönetici' }) : null,
+          isAdminName(m.name) ? h('span', { class: 'badge', text: 'Yönetici' }) : null,
           h('time', { text: fmtTime(m.ts) })),
         body)
     box.append(h('div', { class: 'msg' + (grouped ? '' : ' first') }, gutter, content, del))
@@ -809,8 +866,8 @@ function renderChannels() {
   for (const c of voiceChannels) {
     const inside = people.filter(p => p.ch === c.id)
     const li = h('li', {}, h('button', {
-      class: 'chan' + (S.view === c.id ? ' active' : '') + (S.voice?.ch === c.id ? ' live' : '') + (S.unread.has(c.id) ? ' unread' : ''),
-      onclick: () => { viewChannel(c.id); joinVoice(c.id) }
+      class: 'chan' + (S.voice?.ch === c.id ? ' live' : ''),
+      onclick: () => { joinVoice(c.id); closeDrawers() } // sesli kanalda metin yok: görünen metin kanalı değişmez
     }, h('span', { html: ico('speaker'), style: 'display:contents' }), h('span', { class: 'name', text: c.name }),
     inside.length ? h('span', { class: 'count', text: inside.length + '/' + (CONFIG.maxPerVoice ?? 8) }) : null))
     if (inside.length) {
@@ -831,7 +888,7 @@ function renderChannels() {
 function renderMembers() {
   const people = roster()
   $('#memberTitle').textContent = 'Çevrimiçi (' + people.length + ')'
-  $('#emptyHint').hidden = people.length > 1
+  $('#emptyHint').hidden = people.length > 1 || S.dir.size > 2 // 2'den fazla kayıtlı kullanıcı varsa ipucu gösterilmez
   const ul = $('#memberList')
   ul.textContent = ''
   for (const p of people) {
@@ -886,11 +943,10 @@ function renderVoiceBar() {
 }
 
 function renderHeader() {
-  const isVoice = voiceIds.has(S.view)
   const locked = adminOnly.has(S.view) && !isAdmin()
-  $('#chIcon').innerHTML = ico(isVoice ? 'speaker' : 'hash')
+  $('#chIcon').innerHTML = ico('hash')
   $('#chTitle').textContent = chanName(S.view) || ''
-  $('#chSub').textContent = isVoice ? 'Ses kanalı, mesajlar burada da yazılabilir' : adminOnly.has(S.view) ? 'Duyuru kanalı, sadece yöneticiler yazabilir' : 'Metin kanalı'
+  $('#chSub').textContent = adminOnly.has(S.view) ? 'Duyuru kanalı, sadece yöneticiler yazabilir' : 'Metin kanalı'
   const input = $('#msgInput')
   input.disabled = locked
   input.placeholder = locked ? 'Bu kanala sadece yöneticiler yazabilir' : chanName(S.view) + ' kanalına yaz'
@@ -1138,11 +1194,12 @@ async function boot(me) {
 
   applyDir(await rpc('salon_directory'))
   S.live = true
+  await loadMessages({ first: true })
 
   lobby = T.joinRoom(S.cfg, 'lobby', { onJoinError: () => joinProblem() })
   A.presence = lobby.makeAction('presence')
   A.chat = lobby.makeAction('chat')
-  A.hist = lobby.makeAction('hist')
+  A.mdel = lobby.makeAction('mdel')
   A.cmd = lobby.makeAction('cmd')
 
   A.presence.onMessage = (d, { peerId }) => onPresence(d, peerId)
@@ -1154,7 +1211,14 @@ async function boot(me) {
     if (adminOnly.has(m.ch) && !S.adminIds.has(peerId)) return // duyuru kanalına yönetici dışı mesaj girmez
     addMessage(m)
   }
-  A.hist.onMessage = (d, { peerId }) => onHistory(d, peerId)
+  // Silme bildirimi: yalnızca mesajın yazarı ya da bir yönetici gönderebilir (gerçek kontrol sunucudadır, bu sadece anlık görünüm)
+  A.mdel.onMessage = (d, { peerId }) => {
+    const p = S.peers.get(peerId)
+    if (!p?.ready || !d || typeof d.id !== 'string') return
+    const id = str(d.id, 64)
+    const m = findMessage(id)
+    if (m && (S.adminIds.has(peerId) || keyName(m.name) === keyName(p.name))) removeMessage(id)
+  }
   A.cmd.onMessage = (d, { peerId }) => onCmd(d, peerId)
 
   lobby.onPeerJoin = id => {
@@ -1163,7 +1227,6 @@ async function boot(me) {
     // kimliğimiz karşıda doğrulanana kadar bekle, sonra geçmişi ve susturmaları gönder
     setTimeout(() => {
       if (!S.peers.has(id)) return
-      sendHistoryTo(id)
       if (isAdmin()) for (const t of S.srvMuted) sendCmd('mute', t, '', id)
     }, 1500)
     updateNet()
@@ -1187,6 +1250,8 @@ function startLoops() {
   setInterval(broadcastPresence, 20000)
   setInterval(updateNet, 2000)
   setInterval(() => { dirAt = 0; refreshDir() }, 5 * 60e3) // yönetici değişiklikleri vb. için
+  setInterval(loadMessages, 30000) // kaçırılan mesajlar ve silmeler için
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadMessages() })
 }
 
 function teardown() {
@@ -1395,11 +1460,13 @@ function wire() {
     }
   })
 
-  $('#composer').addEventListener('submit', e => {
+  $('#composer').addEventListener('submit', async e => {
     e.preventDefault()
     const input = $('#msgInput')
-    sendMessage(input.value)
+    const text = input.value
     input.value = ''
+    // gönderilemezse yazdığın kaybolmasın
+    if (!(await sendMessage(text)) && !input.value) input.value = text
   })
 
   $('#micBtn').addEventListener('click', toggleMute)
