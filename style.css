@@ -252,6 +252,15 @@ input[type="range"] { padding: 0; accent-color: var(--accent); }
 .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .row.end { justify-content: space-between; margin-top: 22px; }
 .admin-actions { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.field output { color: var(--muted); font-weight: 500; margin-left: 6px; }
+.vol-row { display: flex; align-items: center; gap: 8px; }
+.vol-row input[type="range"] { flex: 1; }
+
+/* Mikrofon seviye çubuğu */
+.lvl { position: relative; height: 10px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); overflow: hidden; }
+.lvl i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--faint); transition: width .05s linear; }
+.lvl i.open { background: var(--ok); }
+.lvl b { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--talk); }
 
 /* ---------- Bildirimler ---------- */
 .toasts { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 50; pointer-events: none; width: min(420px, calc(100vw - 24px)); }
