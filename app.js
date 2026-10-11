@@ -52,6 +52,7 @@ const ICONS = {
   sliders: svg('<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>'),
   hash: svg('<line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/>'),
   speaker: svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>'),
+  speakerOff: svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" x2="17" y1="9" y2="15"/><line x1="17" x2="23" y1="9" y2="15"/>'),
   menu: svg('<line x1="4" x2="20" y1="7" y2="7"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="17" y2="17"/>'),
   users: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
   send: svg('<line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>'),
@@ -91,7 +92,15 @@ const S = {
   me: { muted: false, deaf: false, mutedBefore: false, ch: null },
   voice: null,
   joining: false,
-  settings: { sounds: LS.get('sounds', true), mic: LS.get('mic', '') },
+  settings: {
+    sounds: LS.get('sounds', true),
+    mic: LS.get('mic', ''),
+    micVol: LS.get('micVol', 1), // mikrofon seviyesi, 0-2
+    outVol: LS.get('outVol', 1), // hoparlör seviyesi, 0-2
+    ns: LS.get('ns', true), // tarayıcının otomatik gürültü engellemesi
+    gate: LS.get('gate', false), // manuel ses eşiği açık mı
+    thresh: LS.get('thresh', -50) // ses eşiği, dB (-70 ile -10 arası)
+  },
   seed: null,
   seenNonces: new Set(),
   speak: new Map()
@@ -437,19 +446,146 @@ function tone(name) {
     g.gain.setValueAtTime(0.0001, t)
     g.gain.linearRampToValueAtTime(0.07, t + 0.01)
     g.gain.exponentialRampToValueAtTime(0.0001, t + d)
-    o.connect(g).connect(AC.destination)
+    o.connect(g).connect(getOut())
     o.start(t)
     o.stop(t + d + 0.03)
     t += d * 0.9
   }
 }
 
-async function getMic() {
-  const base = { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-  if (S.settings.mic) {
-    try { return await navigator.mediaDevices.getUserMedia({ audio: { ...base, deviceId: { exact: S.settings.mic } } }) } catch { /* cihaz yok, varsayılana dön */ }
+// Tüm sesler (kişiler, bildirim sesleri, test) önce bu ana düğümden geçer: hoparlör seviyesi burada uygulanır.
+// Sonda bir sınırlayıcı var, böylece %200 seviyeler aşırı yüksek patlama yapmaz.
+let OUT = null
+function getOut() {
+  ensureAudio()
+  if (!OUT) {
+    const g = AC.createGain()
+    const lim = AC.createDynamicsCompressor()
+    lim.threshold.value = -6
+    lim.knee.value = 6
+    lim.ratio.value = 20
+    lim.attack.value = 0.003
+    lim.release.value = 0.1
+    g.gain.value = (draft || S.settings).outVol
+    g.connect(lim)
+    lim.connect(AC.destination)
+    OUT = g
+  }
+  return OUT
+}
+const setOutVol = v => { if (OUT) OUT.gain.value = v }
+
+// Ses eşiği (noise gate) ses iş parçacığında çalışır; sekme arka plandayken zamanlayıcı kısıtlamasından etkilenmez.
+// Sesi 30 ms geriden çalar, böylece eşiği aşan konuşmanın ilk hecesi kesilmez.
+const GATE_WORKLET = `
+class SalonGate extends AudioWorkletProcessor {
+  constructor() {
+    super()
+    this.on = false
+    this.thresh = 0.003
+    this.env = 0
+    this.hold = 0
+    this.gain = 1
+    this.open = true
+    this.size = Math.ceil(sampleRate * 0.03)
+    this.buf = new Float32Array(this.size)
+    this.pos = 0
+    this.ka = 1 - Math.exp(-1 / (0.005 * sampleRate))
+    this.kr = 1 - Math.exp(-1 / (0.04 * sampleRate))
+    this.since = 0
+    this.port.onmessage = e => { this.on = !!e.data.on; this.thresh = Number(e.data.thresh) || 0 }
+  }
+  process(inputs, outputs) {
+    const inp = inputs[0] && inputs[0][0]
+    const out = outputs[0] && outputs[0][0]
+    if (!out) return true
+    const len = out.length
+    let sum = 0
+    if (inp) for (let i = 0; i < len; i++) sum += inp[i] * inp[i]
+    const rms = Math.sqrt(sum / len)
+    this.env = rms > this.env ? rms : this.env * 0.97
+    if (this.on && this.env > this.thresh) this.hold = currentTime + 0.3
+    this.open = !this.on || currentTime < this.hold
+    const target = this.open ? 1 : 0
+    const k = this.open ? this.ka : this.kr
+    for (let i = 0; i < len; i++) {
+      const x = inp ? inp[i] : 0
+      const d = this.buf[this.pos]
+      this.buf[this.pos] = x
+      this.pos = (this.pos + 1) % this.size
+      this.gain += (target - this.gain) * k
+      out[i] = d * this.gain
+    }
+    this.since += len
+    if (this.since >= sampleRate * 0.04) {
+      this.since = 0
+      this.port.postMessage({ env: this.env, open: this.open })
+    }
+    return true
+  }
+}
+registerProcessor('salon-gate', SalonGate)
+`
+
+let gateReady = null
+function loadGate() {
+  if (!gateReady) {
+    if (!AC.audioWorklet) return Promise.reject(new Error('AudioWorklet yok'))
+    const url = URL.createObjectURL(new Blob([GATE_WORKLET], { type: 'text/javascript' }))
+    gateReady = AC.audioWorklet.addModule(url).catch(e => { gateReady = null; throw e })
+  }
+  return gateReady
+}
+
+async function getMic(cfg = S.settings) {
+  const base = { echoCancellation: true, noiseSuppression: cfg.ns !== false, autoGainControl: true }
+  if (cfg.mic) {
+    try { return await navigator.mediaDevices.getUserMedia({ audio: { ...base, deviceId: { exact: cfg.mic } } }) } catch { /* cihaz yok, varsayılana dön */ }
   }
   return navigator.mediaDevices.getUserMedia({ audio: base })
+}
+
+// Mikrofon zinciri: ham mikrofon -> seviye -> ses eşiği -> gönderilecek akış.
+// cfg() her çağrıldığında güncel ayarları döndürür (seviye ve eşik canlı değişebilsin diye).
+// Ses eşiği yüklenemezse (eski tarayıcı) zincir eşiksiz çalışır.
+async function buildMicChain(raw, cfg) {
+  const src = AC.createMediaStreamSource(raw)
+  const gain = AC.createGain()
+  const dest = AC.createMediaStreamDestination()
+  let node = null
+  try {
+    await loadGate()
+    node = new AudioWorkletNode(AC, 'salon-gate', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] })
+  } catch (e) { console.warn('ses eşiği kullanılamıyor', e) }
+
+  const chain = { stream: dest.stream, out: node || gain, db: -100, open: true }
+  let last = ''
+  const push = () => {
+    const c = cfg()
+    gain.gain.value = c.micVol
+    if (!node) return
+    const key = c.gate + '|' + c.thresh
+    if (key === last) return
+    last = key
+    node.port.postMessage({ on: !!c.gate, thresh: Math.pow(10, c.thresh / 20) })
+  }
+  push()
+  const timer = setInterval(push, 100)
+  src.connect(gain)
+  if (node) {
+    node.port.onmessage = e => { chain.db = 20 * Math.log10(e.data.env + 1e-9); chain.open = e.data.open }
+    gain.connect(node)
+    node.connect(dest)
+  } else gain.connect(dest)
+
+  chain.stop = () => {
+    clearInterval(timer)
+    try { src.disconnect(); gain.disconnect(); node?.disconnect() } catch { /* yoksay */ }
+    if (node) node.port.onmessage = null
+    raw.getTracks().forEach(t => t.stop())
+    dest.stream.getTracks().forEach(t => t.stop())
+  }
+  return chain
 }
 
 function micError(e) {
@@ -512,33 +648,49 @@ function refreshMic() {
   if (track) track.enabled = !S.me.muted && !S.srvMuted.has(S.id)
 }
 
+// Kişi başı ses seviyesi 0-2 (%0-%200) arasındadır ve tarayıcıda saklanır. "Benim için sustur" da kişiye özeldir.
+const userVol = name => { const v = Number(LS.get('vol.' + name, 1)); return Number.isFinite(v) ? Math.min(2, Math.max(0, v)) : 1 }
+const userMuted = name => LS.get('mute.' + name, false) === true
+
 function refreshRemoteAudio(id) {
   const r = S.voice?.remotes.get(id)
   if (!r) return
   const name = S.peers.get(id)?.name || ''
-  r.audio.volume = LS.get('vol.' + name, 1)
-  r.audio.muted = S.me.deaf || S.srvMuted.has(id)
+  const silent = S.me.deaf || S.srvMuted.has(id) || userMuted(name)
+  r.gain.gain.value = silent ? 0 : userVol(name)
 }
 function refreshAllRemoteAudio() { if (S.voice) for (const id of S.voice.remotes.keys()) refreshRemoteAudio(id) }
+
+function teardownRemote(r) {
+  r.audio.pause()
+  r.audio.srcObject = null
+  try { r.src.disconnect(); r.gain.disconnect() } catch { /* yoksay */ }
+}
 
 function attachRemote(id, stream) {
   const v = S.voice
   if (!v) return
   detachRemote(id)
+  ensureAudio()
+  // Chrome, uzak bir akışı bir medya öğesine bağlanmadıkça Web Audio'ya vermez. Öğe sessizde tutulur,
+  // ses Web Audio üzerinden (kişi seviyesi, hoparlör seviyesi) çalınır; %100 üstü ancak böyle mümkün.
   const audio = new Audio()
+  audio.muted = true
   audio.srcObject = stream
-  audio.autoplay = true
-  v.remotes.set(id, { audio, stream })
+  audio.play().catch(() => { /* sessiz öğe, sorun değil */ })
+  const src = AC.createMediaStreamSource(stream)
+  const gain = AC.createGain()
+  src.connect(gain)
+  gain.connect(getOut())
+  v.remotes.set(id, { audio, stream, src, gain })
   addMeter(stream, id)
   refreshRemoteAudio(id)
-  audio.play().catch(() => toast('Ses başlatılamadı. Sayfada bir yere tıklayıp tekrar dene.', 'err'))
   renderChannels()
 }
 function detachRemote(id) {
   const r = S.voice?.remotes.get(id)
   if (!r) return
-  r.audio.pause()
-  r.audio.srcObject = null
+  teardownRemote(r)
   S.voice.remotes.delete(id)
   dropMeter(id)
 }
@@ -554,11 +706,13 @@ async function joinVoice(chId) {
   try {
     leaveVoice(true)
     ensureAudio()
-    let stream
-    try { stream = await getMic() } catch (e) { return toast(micError(e), 'err') }
+    let raw
+    try { raw = await getMic() } catch (e) { return toast(micError(e), 'err') }
+    const chain = await buildMicChain(raw, () => S.settings)
+    const stream = chain.stream
 
     const room = T.joinRoom(S.cfg, 'voice-' + chId, { onJoinError: () => joinProblem() })
-    const v = { ch: chId, room, stream, remotes: new Map(), waiting: new Map() }
+    const v = { ch: chId, room, stream, chain, remotes: new Map(), waiting: new Map() }
     S.voice = v
     S.me.ch = chId
     refreshMic()
@@ -584,13 +738,11 @@ function leaveVoice(quiet) {
   if (!v) return
   S.voice = null
   for (const id of [...v.remotes.keys()]) {
-    const r = v.remotes.get(id)
-    r.audio.pause()
-    r.audio.srcObject = null
+    teardownRemote(v.remotes.get(id))
     dropMeter(id)
   }
   dropMeter(S.id)
-  v.stream.getTracks().forEach(t => t.stop())
+  v.chain.stop()
   try { v.room.leave() } catch { /* yoksay */ }
   S.me.ch = null
   broadcastPresence()
@@ -668,7 +820,8 @@ function renderChannels() {
         return h('li', {}, h('button', { class: 'vuser' + (pending ? ' pending' : ''), onclick: () => openUser(p.id) },
           avatar(p.name, p.self ? 'me' : p.id, 'small'),
           h('span', { class: 'nm', text: p.name }),
-          (muted || p.deaf) ? h('span', { class: 'st', html: ico(p.deaf ? 'headphonesOff' : 'micOff'), title: p.deaf ? 'Sesi kapalı' : 'Mikrofonu kapalı' }) : null))
+          (muted || p.deaf) ? h('span', { class: 'st', html: ico(p.deaf ? 'headphonesOff' : 'micOff'), title: p.deaf ? 'Sesi kapalı' : 'Mikrofonu kapalı' }) : null,
+          (!p.self && userMuted(p.name)) ? h('span', { class: 'st', html: ico('speakerOff'), title: 'Senin için susturuldu' }) : null))
       })))
     }
     vl.append(li)
@@ -774,9 +927,10 @@ function openUser(id) {
   const canVol = !p.self && S.voice && p.ch === S.voice.ch
   $('#udVolume').hidden = !canVol
   if (canVol) {
-    const v = Math.round(LS.get('vol.' + p.name, 1) * 100)
+    const v = Math.round(userVol(p.name) * 100)
     $('#udVol').value = v
     $('#udVolOut').textContent = v + '%'
+    paintLocalMute(p.name)
   }
   const adm = isAdmin() && !p.self
   $('#udAdmin').hidden = !adm
@@ -787,9 +941,90 @@ function openUser(id) {
   dlg.showModal()
 }
 
+function paintLocalMute(name) {
+  const m = userMuted(name)
+  const b = $('#udLocalMute')
+  b.innerHTML = ico(m ? 'speakerOff' : 'speaker')
+  b.setAttribute('aria-pressed', String(m))
+  const label = m ? 'Susturmayı kaldır' : 'Benim için sustur'
+  b.setAttribute('aria-label', label)
+  b.title = label
+}
+
+let draft = null // ayarlar penceresi açıkken değişiklikler burada durur, Kaydet'e basılınca S.settings'e geçer
+let test = null // "Kendimi dinle" testi
+
+const lvlPct = db => Math.max(0, Math.min(100, ((db + 70) / 60) * 100))
+
+function updateTestBtn() {
+  const b = $('#testBtn')
+  b.textContent = test ? (test.chain ? 'Dinlemeyi durdur' : 'Başlatılıyor…') : 'Kendimi dinle'
+  b.setAttribute('aria-pressed', String(!!test))
+}
+
+function paintLevel() {
+  const c = test?.chain
+  const fill = $('#lvlFill')
+  fill.style.width = (c ? lvlPct(c.db) : 0) + '%'
+  fill.classList.toggle('open', !!c?.open)
+}
+
+function syncAudioControls() {
+  const d = draft
+  $('#setMicVol').value = Math.round(d.micVol * 100)
+  $('#setMicVolOut').textContent = Math.round(d.micVol * 100) + '%'
+  $('#setOutVol').value = Math.round(d.outVol * 100)
+  $('#setOutVolOut').textContent = Math.round(d.outVol * 100) + '%'
+  $('#setNs').checked = d.ns
+  $('#setGate').checked = d.gate
+  $('#threshField').hidden = !d.gate
+  $('#setThresh').value = d.thresh
+  $('#setThreshOut').textContent = d.thresh + ' dB'
+  const mark = $('#lvlMark')
+  mark.hidden = !d.gate
+  mark.style.left = lvlPct(d.thresh) + '%'
+  $('#setSounds').checked = d.sounds
+  updateTestBtn()
+}
+
+async function startTest() {
+  if (test || !draft) return
+  if (!navigator.mediaDevices?.getUserMedia) return toast('Bu tarayıcıda ya da bu adreste mikrofon kullanılamıyor. Sayfa https ile açılmalı.', 'err')
+  const tok = {}
+  test = tok
+  updateTestBtn()
+  ensureAudio()
+  let raw
+  try { raw = await getMic(draft) } catch (e) { if (test === tok) test = null; updateTestBtn(); return toast(micError(e), 'err') }
+  const chain = await buildMicChain(raw, () => draft || S.settings)
+  if (test !== tok) { chain.stop(); return } // pencere kapandı ya da test iptal edildi
+  chain.out.connect(getOut())
+  tok.chain = chain
+  tok.timer = setInterval(paintLevel, 50)
+  updateTestBtn()
+  fillMics() // izin verildi, cihaz adları artık görünür
+}
+
+function stopTest() {
+  const t = test
+  test = null
+  if (!t) return
+  clearInterval(t.timer)
+  t.chain?.stop()
+  paintLevel()
+  updateTestBtn()
+}
+
+function restartTest() {
+  stopTest()
+  startTest()
+}
+
 async function openSettings() {
+  const s = S.settings
+  draft = { sounds: s.sounds, mic: s.mic, micVol: s.micVol, outVol: s.outVol, ns: s.ns, gate: s.gate, thresh: s.thresh }
   $('#setAccount').textContent = S.name + (isAdmin() ? ' (yönetici)' : '')
-  $('#setSounds').checked = S.settings.sounds
+  syncAudioControls()
   await fillMics()
   $('#settingsDlg').showModal()
 }
@@ -802,20 +1037,22 @@ async function fillMics() {
     const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default')
     devs.forEach((d, i) => sel.append(h('option', { value: d.deviceId, text: d.label || 'Mikrofon ' + (i + 1) })))
   } catch { /* yoksay */ }
-  sel.value = S.settings.mic
-  if (sel.value !== S.settings.mic) sel.value = ''
+  const want = (draft || S.settings).mic
+  sel.value = want
+  if (sel.value !== want) sel.value = ''
 }
 
 function saveSettings() {
-  S.settings.sounds = $('#setSounds').checked
-  LS.set('sounds', S.settings.sounds)
-  const mic = $('#setMic').value
-  const micChanged = mic !== S.settings.mic
-  S.settings.mic = mic
-  LS.set('mic', mic)
+  const d = draft
+  if (!d) return
+  // Mikrofon cihazı ya da gürültü engelleme değiştiyse mikrofon yeniden açılmalı; seviye ve eşik canlı uygulanır
+  const reopen = d.mic !== S.settings.mic || d.ns !== S.settings.ns
+  Object.assign(S.settings, d)
+  for (const k of ['sounds', 'mic', 'micVol', 'outVol', 'ns', 'gate', 'thresh']) LS.set(k, S.settings[k])
+  setOutVol(S.settings.outVol)
   broadcastPresence()
   renderAll()
-  if (micChanged && S.voice) { const ch = S.voice.ch; leaveVoice(true); joinVoice(ch) }
+  if (reopen && S.voice) { const ch = S.voice.ch; leaveVoice(true); joinVoice(ch) }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1178,6 +1415,32 @@ function wire() {
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawers() })
 
   $('#saveSettings').addEventListener('click', saveSettings)
+
+  // ses ayarları: değişiklikler önce taslağa yazılır, test ve hoparlör seviyesi canlı dinlenebilir
+  $('#setMic').addEventListener('change', e => { draft.mic = e.target.value; if (test) restartTest() })
+  $('#setSounds').addEventListener('change', e => { draft.sounds = e.target.checked })
+  $('#setNs').addEventListener('change', e => { draft.ns = e.target.checked; if (test) restartTest() })
+  $('#setMicVol').addEventListener('input', e => {
+    draft.micVol = Number(e.target.value) / 100
+    $('#setMicVolOut').textContent = e.target.value + '%'
+  })
+  $('#setOutVol').addEventListener('input', e => {
+    draft.outVol = Number(e.target.value) / 100
+    $('#setOutVolOut').textContent = e.target.value + '%'
+    setOutVol(draft.outVol)
+  })
+  $('#setGate').addEventListener('change', e => { draft.gate = e.target.checked; syncAudioControls() })
+  $('#setThresh').addEventListener('input', e => {
+    draft.thresh = Number(e.target.value)
+    $('#setThreshOut').textContent = draft.thresh + ' dB'
+    $('#lvlMark').style.left = lvlPct(draft.thresh) + '%'
+  })
+  $('#testBtn').addEventListener('click', () => { if (test) stopTest(); else startTest() })
+  $('#settingsDlg').addEventListener('close', () => {
+    stopTest()
+    setOutVol(S.settings.outVol) // kaydedilmeyen hoparlör seviyesi geri alınır
+    draft = null
+  })
   $('#logoutBtn').addEventListener('click', async () => {
     try { await rpc('salon_logout') } catch { /* yoksay */ }
     try { await sb.auth.signOut() } catch { /* yoksay */ }
@@ -1191,6 +1454,14 @@ function wire() {
     if (name == null) return
     LS.set('vol.' + name, v / 100)
     refreshRemoteAudio(userDlgId)
+  })
+  $('#udLocalMute').addEventListener('click', () => {
+    const name = S.peers.get(userDlgId)?.name
+    if (name == null) return
+    LS.set('mute.' + name, !userMuted(name))
+    paintLocalMute(name)
+    refreshRemoteAudio(userDlgId)
+    renderChannels()
   })
   $('#udMute').addEventListener('click', () => {
     sendCmd(S.srvMuted.has(userDlgId) ? 'unmute' : 'mute', userDlgId)
