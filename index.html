@@ -29,6 +29,7 @@
 
     <label for="nameInput">Kullanıcı adı</label>
     <input id="nameInput" maxlength="20" required placeholder="Örn. Ayşe" autocomplete="username" autocapitalize="off" spellcheck="false">
+    <p class="hint" id="nameHint" hidden>En az 6, en fazla 20 karakter.</p>
 
     <label for="passInput">Şifre</label>
     <input id="passInput" type="password" required minlength="6" placeholder="En az 6 karakter" autocomplete="current-password">
@@ -44,6 +45,8 @@
       <p class="hint" id="codeHint">Sunucu sahibinden öğren. Sadece kayıt olurken gerekir.</p>
     </div>
 
+    <button type="button" id="forgotBtn" class="linkbtn">Şifremi unuttum</button>
+
     <button class="btn primary" id="loginBtn" type="submit">Giriş yap</button>
     <p id="loginStatus" class="hint status" role="status" hidden></p>
     <p id="loginError" class="error" role="alert" hidden></p>
@@ -55,7 +58,7 @@
   <aside id="side" class="side" aria-label="Kanallar">
     <header class="brand">
       <span class="logo" aria-hidden="true"></span>
-      <h1 id="serverName">Salon</h1>
+      <h1><span id="serverName">Salon</span> <small id="serverVer" style="font:500 11px/1 var(--body);letter-spacing:0;color:var(--faint);margin-left:4px"></small></h1>
       <button class="icon-btn only-mobile" id="closeSide" aria-label="Kapat" data-icon="x"></button>
     </header>
 
@@ -156,6 +159,9 @@
     <div class="field">
       <label>Hesap</label>
       <p id="setAccount" class="muted"></p>
+      <div class="row">
+        <button type="button" id="renameBtn" class="btn">Kullanıcı adını değiştir</button>
+      </div>
     </div>
 
     <div class="field">
@@ -172,6 +178,67 @@
     <div class="row end">
       <button type="button" id="logoutBtn" class="btn danger">Çıkış yap</button>
       <button class="btn primary" value="save" id="saveSettings">Kaydet</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Kullanıcı adı değiştirme -->
+<dialog id="renameDlg" class="dlg">
+  <form id="renameForm" autocomplete="off">
+    <header class="dlg-head">
+      <h3>Kullanıcı adını değiştir</h3>
+      <button class="icon-btn" aria-label="Kapat" data-icon="x"></button>
+    </header>
+
+    <div class="field">
+      <label for="renameInput">Yeni kullanıcı adı</label>
+      <input id="renameInput" maxlength="20" minlength="6" required autocapitalize="off" spellcheck="false">
+      <p class="hint">6-20 karakter. Harf (Türkçe dahil), rakam, boşluk, nokta, tire ve alt çizgi kullanılabilir.</p>
+    </div>
+    <div class="field">
+      <label for="renamePass">Şifren</label>
+      <input id="renamePass" type="password" required autocomplete="current-password">
+      <p class="hint">Onay için mevcut şifreni yaz.</p>
+    </div>
+    <p id="renameErr" class="error" role="alert" hidden></p>
+
+    <div class="row end">
+      <button type="button" id="renameCancel" class="btn">Vazgeç</button>
+      <button type="submit" id="renameSubmit" class="btn primary">Değiştir</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Şifremi unuttum -->
+<dialog id="resetDlg" class="dlg">
+  <form id="resetForm" autocomplete="off">
+    <header class="dlg-head">
+      <h3>Şifremi unuttum</h3>
+      <button class="icon-btn" aria-label="Kapat" data-icon="x"></button>
+    </header>
+    <p class="muted">Sunucu yöneticisinden bir sıfırlama kodu iste. Kod 1 saat geçerlidir ve bir kez kullanılır.</p>
+
+    <div class="field">
+      <label for="resetName">Kullanıcı adı</label>
+      <input id="resetName" maxlength="20" required autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label for="resetCode">Sıfırlama kodu</label>
+      <input id="resetCode" required placeholder="Örn. 3F9A1-C07BD" autocapitalize="characters" spellcheck="false">
+    </div>
+    <div class="field">
+      <label for="resetPass">Yeni şifre</label>
+      <input id="resetPass" type="password" required minlength="6" placeholder="En az 6 karakter" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label for="resetPass2">Yeni şifre tekrar</label>
+      <input id="resetPass2" type="password" required autocomplete="new-password">
+    </div>
+    <p id="resetErr" class="error" role="alert" hidden></p>
+
+    <div class="row end">
+      <button type="button" id="resetCancel" class="btn">Vazgeç</button>
+      <button type="submit" id="resetSubmit" class="btn primary">Şifreyi değiştir</button>
     </div>
   </form>
 </dialog>
