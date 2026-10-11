@@ -136,7 +136,11 @@
     </header>
     <div id="udVolume" class="field" hidden>
       <label for="udVol">Ses seviyesi <output id="udVolOut">100%</output></label>
-      <input id="udVol" type="range" min="0" max="100" value="100">
+      <div class="vol-row">
+        <input id="udVol" type="range" min="0" max="200" step="5" value="100">
+        <button type="button" id="udLocalMute" class="icon-btn" aria-label="Benim için sustur" aria-pressed="false" title="Benim için sustur" data-icon="speaker"></button>
+      </div>
+      <p class="hint">Bu ayarlar sadece senin için geçerlidir, başkaları etkilenmez.</p>
     </div>
     <div id="udAdmin" class="admin-actions" hidden>
       <p class="muted">Yönetici işlemleri</p>
@@ -168,6 +172,41 @@
       <label for="setMic">Mikrofon</label>
       <select id="setMic"><option value="">Varsayılan</option></select>
       <p class="hint">Cihaz listesi mikrofona bir kez izin verdikten sonra tam görünür.</p>
+    </div>
+
+    <div class="field">
+      <label for="setMicVol">Mikrofon seviyesi <output id="setMicVolOut">100%</output></label>
+      <input id="setMicVol" type="range" min="0" max="200" step="5" value="100">
+    </div>
+
+    <div class="field">
+      <label for="setOutVol">Hoparlör seviyesi <output id="setOutVolOut">100%</output></label>
+      <input id="setOutVol" type="range" min="0" max="200" step="5" value="100">
+    </div>
+
+    <div class="field check">
+      <input id="setNs" type="checkbox">
+      <label for="setNs">Otomatik gürültü engelleme</label>
+    </div>
+
+    <div class="field check">
+      <input id="setGate" type="checkbox">
+      <label for="setGate">Ses eşiği (manuel)</label>
+    </div>
+
+    <div class="field" id="threshField" hidden>
+      <label for="setThresh">Eşik <output id="setThreshOut">-50 dB</output></label>
+      <input id="setThresh" type="range" min="-70" max="-10" step="1" value="-50">
+      <p class="hint">Mikrofon, bu seviyenin altındayken sessiz kalır. Konuşurken aşağıdaki çubuğun sarı işaretin sağına geçmesi gerekir.</p>
+    </div>
+
+    <div class="field">
+      <label>Mikrofon testi</label>
+      <div class="lvl" aria-hidden="true"><i id="lvlFill"></i><b id="lvlMark" hidden></b></div>
+      <div class="row">
+        <button type="button" id="testBtn" class="btn" aria-pressed="false">Kendimi dinle</button>
+      </div>
+      <p class="hint">Hoparlörden dinliyorsan yankı yapabilir, kulaklık tak. Test, pencere kapanınca durur. Ayarlar Kaydet'e basınca kalıcı olur.</p>
     </div>
 
     <div class="field check">
