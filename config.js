@@ -17,8 +17,9 @@ export default {
   version: '1.1.0',
 
   // Kanallar. id'ler sabit kalmalı, name istediğin gibi olabilir.
+  // adminOnly: true olan metin kanalına sadece yöneticiler yazabilir.
   textChannels: [
-    { id: 'genel', name: 'genel' },
+    { id: 'duyuru', name: 'duyuru', adminOnly: true },
     { id: 'muhabbet', name: 'muhabbet' }
   ],
   voiceChannels: [
