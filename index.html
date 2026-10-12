@@ -74,11 +74,17 @@
     </div>
 
     <div id="voiceBar" class="voicebar" hidden>
-      <div class="vb-text">
-        <strong id="vbTitle">Ses bağlı</strong>
-        <span id="vbSub">0 kişi</span>
+      <div class="vb-row">
+        <div class="vb-text">
+          <strong id="vbTitle">Ses bağlı</strong>
+          <span id="vbSub">0 kişi</span>
+        </div>
+        <button id="leaveVoice" class="icon-btn danger" aria-label="Ses kanalından ayrıl" title="Ayrıl" data-icon="logout"></button>
       </div>
-      <button id="leaveVoice" class="icon-btn danger" aria-label="Ses kanalından ayrıl" title="Ayrıl" data-icon="logout"></button>
+      <div class="vb-actions" hidden>
+        <button type="button" id="watchBtn" class="btn small primary" hidden>İzle</button>
+      </div>
+      <p id="shareInfo" class="vb-share" hidden></p>
     </div>
 
     <footer class="me">
@@ -88,6 +94,7 @@
       </button>
       <button id="micBtn" class="icon-btn" aria-label="Mikrofonu kapat" aria-pressed="false" data-icon="mic"></button>
       <button id="deafBtn" class="icon-btn" aria-label="Sesi kapat" aria-pressed="false" data-icon="headphones"></button>
+      <button id="shareBtn" type="button" class="icon-btn" aria-label="Ekran paylaş" aria-pressed="false" title="Ekran paylaş" data-icon="screen" disabled></button>
       <button id="settingsBtn" class="icon-btn" aria-label="Ayarlar" data-icon="sliders"></button>
     </footer>
   </aside>
@@ -119,6 +126,26 @@
       <input id="msgInput" maxlength="2000" placeholder="Mesaj yaz" aria-label="Mesaj">
       <button class="icon-btn send" type="submit" aria-label="Gönder" data-icon="send"></button>
     </form>
+    <!-- Ekran paylaşımı izleme paneli -->
+    <section id="stage" class="stage" aria-label="Ekran paylaşımı" hidden>
+      <header class="stage-head">
+        <span class="live-dot" aria-hidden="true"></span>
+        <strong id="stageTitle"></strong>
+        <small id="stageInfo"></small>
+        <span class="grow"></span>
+        <button type="button" id="stageMini" class="icon-btn" aria-label="Küçült" title="Küçült ya da büyüt" data-icon="pip"></button>
+        <button type="button" id="stageFull" class="icon-btn" aria-label="Tam ekran" title="Tam ekran" data-icon="expand"></button>
+        <button type="button" id="stageClose" class="icon-btn danger" aria-label="İzlemeyi bırak" title="İzlemeyi bırak" data-icon="x"></button>
+      </header>
+      <div class="stage-body">
+        <video id="stageVideo" autoplay playsinline></video>
+        <p id="stageWait" class="stage-wait">Bağlanıyor…</p>
+      </div>
+      <footer id="stageAudio" class="stage-foot" hidden>
+        <button type="button" id="stageMute" class="icon-btn" aria-label="Yayın sesini kapat" aria-pressed="false" data-icon="speaker"></button>
+        <input id="stageVol" type="range" min="0" max="100" value="100" aria-label="Yayın ses seviyesi">
+      </footer>
+    </section>
   </main>
 
   <aside id="members" class="members" aria-label="Üyeler">
@@ -286,6 +313,43 @@
     <div class="row end">
       <button type="button" id="resetCancel" class="btn">Vazgeç</button>
       <button type="submit" id="resetSubmit" class="btn primary">Şifreyi değiştir</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Ekran paylaşımı başlatma -->
+<dialog id="shareDlg" class="dlg">
+  <form id="shareForm" autocomplete="off">
+    <header class="dlg-head">
+      <h3 id="shareTitle">Ekran paylaş</h3>
+      <button class="icon-btn" aria-label="Kapat" data-icon="x"></button>
+    </header>
+
+    <p id="shareWarn" class="warn" hidden></p>
+
+    <div class="field">
+      <label for="shareQ">Kalite</label>
+      <select id="shareQ">
+        <option value="1080p60">1080p 60 fps (en yüksek)</option>
+        <option value="720p60">720p 60 fps</option>
+        <option value="1080p30">1080p 30 fps</option>
+        <option value="720p30">720p 30 fps</option>
+      </select>
+      <p id="shareEst" class="hint"></p>
+    </div>
+
+    <div class="field check">
+      <input id="shareAudio" type="checkbox">
+      <label for="shareAudio">Ekran ya da sekme sesini de paylaş</label>
+    </div>
+    <p class="hint">Ses paylaşımı Chrome ve Edge'de bir sekme ya da tüm ekran seçilince çalışır. Tüm ekranın sesini paylaşırsan kanaldaki diğer kişilerin sesleri de yayına karışabilir; en iyisi yalnızca sekme sesini paylaşmak.</p>
+    <p class="hint">Kanalda aynı anda bir kişi paylaşabilir: yeni başlatan kişi öncekinin yayınını kapatır. Yayın yalnızca "İzle"ye basanlara gider. Kimse izlemezse paylaşım 15 dakika sonra otomatik kapanır.</p>
+
+    <div class="row end">
+      <button type="button" id="shareCancel" class="btn">Vazgeç</button>
+      <button type="submit" id="shareStart" class="btn primary">Paylaşmaya başla</button>
+      <button type="button" id="shareStop" class="btn danger" hidden>Paylaşımı durdur</button>
+      <button type="button" id="shareDone" class="btn primary" hidden>Tamam</button>
     </div>
   </form>
 </dialog>
