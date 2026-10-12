@@ -54,6 +54,9 @@ const ICONS = {
   speaker: svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>'),
   speakerOff: svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" x2="17" y1="9" y2="15"/><line x1="17" x2="23" y1="9" y2="15"/>'),
   image: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>'),
+  screen: svg('<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>'),
+  expand: svg('<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/>'),
+  pip: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><rect x="11" y="12" width="8" height="6" rx="1"/>'),
   menu: svg('<line x1="4" x2="20" y1="7" y2="7"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="17" y2="17"/>'),
   users: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
   send: svg('<line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>'),
@@ -108,6 +111,8 @@ const S = {
   seenNonces: new Set(),
   deleted: new Set(), // silinen mesaj kimlikleri (eski bir yenilemeyle geri gelmesin diye)
   imgs: new Map(), // mesaj kimliği -> görselin data adresi (son kullanılanlar bellekte tutulur)
+  share: null, // ekran paylaşıyorsam: { stream, track, room, q, viewers }
+  watch: null, // bir yayını izliyorsam: { id, ch, room, stream, fps }
   speak: new Map()
 }
 
@@ -273,7 +278,7 @@ function applyCmd(cmd) {
 /* Katılımcılar (presence)                                             */
 /* ------------------------------------------------------------------ */
 
-const myPresence = () => ({ n: S.name, s: S.idSig, c: S.me.ch, m: S.me.muted, d: S.me.deaf })
+const myPresence = () => ({ n: S.name, s: S.idSig, c: S.me.ch, m: S.me.muted, d: S.me.deaf, sh: S.share ? S.share.q : '', tk: S.share ? S.share.takeover : '' })
 const broadcastPresence = () => { if (!S.live) return; try { A.presence?.send(myPresence()) } catch (e) { console.warn(e) } }
 
 const retryingPresence = new Set()
@@ -301,6 +306,8 @@ async function onPresence(d, peerId) {
     ch: voiceIds.has(d.c) ? d.c : null,
     muted: !!d.m,
     deaf: !!d.d,
+    share: voiceIds.has(d.c) && isShareQ(d.sh) ? d.sh : '', // ekran paylaşıyorsa kalite anahtarı
+    takeover: str(d.tk, 80), // paylaşımı devraldığı kişinin kimliği (o kişinin yayını kapanır)
     ready: true
   }
   S.peers.set(peerId, peer)
@@ -312,12 +319,30 @@ async function onPresence(d, peerId) {
     const waiting = S.voice.waiting.get(peerId)
     if (waiting) { S.voice.waiting.delete(peerId); attachRemote(peerId, waiting) }
   }
+  if (S.voice && peer.ch === S.voice.ch && peer.share && !prev?.share) {
+    toast(peer.name + ' ekran paylaşıyor. İzlemek için soldaki "İzle" düğmesine bas.')
+  }
+  if (S.share && S.voice && peer.ch === S.voice.ch && peer.share) {
+    if (peer.takeover === S.id) {
+      // biri paylaşımı devraldı: önceki paylaşanın yayını kapanır
+      stopShare(true)
+      toast(peer.name + ' ekran paylaşımını devraldı, senin paylaşımın kapandı.')
+    } else if (S.share.takeover !== peerId && peerId < S.id) {
+      // devralma olmadan aynı anda başlatılmışsa kimliği küçük olan sürer, diğeri durur
+      stopShare(true)
+      toast(peer.name + ' aynı anda paylaşmaya başladı, senin paylaşımın durduruldu.', 'err')
+    }
+  }
+  if (S.watch?.id === peerId && (!peer.share || peer.ch !== S.watch.ch)) {
+    closeWatch()
+    toast(peer.name + ' paylaşımı bitirdi.')
+  }
   refreshRemoteAudio(peerId)
   renderAll()
 }
 
 function roster() {
-  const list = [{ id: S.id, name: S.name, ch: S.me.ch, muted: S.me.muted, deaf: S.me.deaf, self: true }]
+  const list = [{ id: S.id, name: S.name, ch: S.me.ch, muted: S.me.muted, deaf: S.me.deaf, share: S.share ? S.share.q : '', self: true }]
   for (const [id, p] of S.peers) if (p.ready) list.push({ id, ...p })
   return list.sort((a, b) => a.name.localeCompare(b.name, 'tr'))
 }
@@ -954,6 +979,8 @@ async function joinVoice(chId) {
 function leaveVoice(quiet) {
   const v = S.voice
   if (!v) return
+  stopShare(true) // kanaldan ayrılan kişinin paylaşımı ve izlemesi de biter
+  closeWatch()
   S.voice = null
   for (const id of [...v.remotes.keys()]) {
     teardownRemote(v.remotes.get(id))
@@ -971,6 +998,7 @@ function leaveVoice(quiet) {
 function afterSelfChange() {
   refreshMic()
   refreshAllRemoteAudio()
+  refreshStageAudio()
   broadcastPresence()
   renderAll()
 }
@@ -986,6 +1014,325 @@ function toggleDeaf() {
   if (S.me.deaf) { S.me.deaf = false; S.me.muted = S.me.mutedBefore } else { S.me.mutedBefore = S.me.muted; S.me.deaf = true; S.me.muted = true }
   afterSelfChange()
   if (!S.me.deaf) tone('unmute')
+}
+
+/* ------------------------------------------------------------------ */
+/* Ekran paylaşımı                                                     */
+/* ------------------------------------------------------------------ */
+// Bir ses kanalında aynı anda tek kişi paylaşır; kimin paylaştığı presence ile duyurulur (sh alanı).
+// Paylaşan, ses odasından ayrı bir 'screen-<kanal>' odasına girer ve videoyu yalnızca o odaya "İzle" diyerek
+// girenlere gönderir. Kimse izlemiyorsa hiç yükleme yapılmaz, ses bağlantıları da bundan etkilenmez.
+// Ağ doğrudan (kişiden kişiye) olduğu için paylaşanın yüklemesi izleyen sayısı kadar artar.
+
+const SHARE_Q = {
+  '1080p60': { label: '1080p 60 fps', w: 1920, h: 1080, fps: 60, kbps: 8000, hint: 'motion' },
+  '720p60': { label: '720p 60 fps', w: 1280, h: 720, fps: 60, kbps: 4500, hint: 'motion' },
+  '1080p30': { label: '1080p 30 fps', w: 1920, h: 1080, fps: 30, kbps: 5000, hint: 'detail' },
+  '720p30': { label: '720p 30 fps', w: 1280, h: 720, fps: 30, kbps: 2500, hint: 'detail' }
+}
+const isShareQ = k => typeof k === 'string' && Object.hasOwn(SHARE_Q, k)
+const sharerIn = ch => roster().find(p => p.ch === ch && p.share) || null
+
+let stageVol = (() => { const n = Number(LS.get('stageVol', 1)); return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1 })()
+let stageMuted = false
+const IDLE_SHARE_MS = 15 * 60 * 1000 // izleyen yokken paylaşım en fazla bu kadar açık kalır
+
+// Gönderici ayarı: en yüksek bit hızı, kare hızı ve gerekirse çözünürlük küçültme. Tarayıcı bağlantı yetmezse
+// bunun altına kendisi iner; bu ayar yalnızca tavandır.
+async function tuneSender(id) {
+  const sh = S.share
+  if (!sh || !sh.viewers.has(id)) return false
+  const peers = sh.room.getPeers?.()
+  const pc = peers instanceof Map ? peers.get(id) : peers?.[id]
+  const senders = pc?.getSenders?.() || []
+  const sender = senders.find(s => s.track === sh.track) || senders.find(s => s.track?.id === sh.track.id)
+  if (!sender) return false
+  const q = SHARE_Q[sh.q]
+  const params = sender.getParameters()
+  if (!params.encodings?.length) params.encodings = [{}]
+  const enc = params.encodings[0]
+  enc.maxBitrate = q.kbps * 1000
+  enc.maxFramerate = q.fps
+  const w = sh.track.getSettings?.().width || 0
+  enc.scaleResolutionDownBy = w > q.w ? Math.round((w / q.w) * 100) / 100 : 1
+  await sender.setParameters(params)
+  return true
+}
+// Bağlantı kurulurken gönderici henüz hazır olmayabilir, bu yüzden birkaç kez denenir
+const tuneSoon = id => { for (const ms of [300, 1500, 4000]) setTimeout(() => tuneSender(id).catch(e => console.warn('gönderici ayarı', e)), ms) }
+
+async function startShare() {
+  const v = S.voice
+  if (!v || S.share) return
+  if (!navigator.mediaDevices?.getDisplayMedia) return toast('Bu tarayıcı ekran paylaşımını desteklemiyor (telefon tarayıcılarının çoğu desteklemez).', 'err')
+  const q = isShareQ($('#shareQ').value) ? $('#shareQ').value : '720p60'
+  const wantAudio = $('#shareAudio').checked
+  LS.set('shareQ', q)
+  LS.set('shareAudio', wantAudio)
+  const p = SHARE_Q[q]
+
+  let stream
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { width: { ideal: p.w }, height: { ideal: p.h }, frameRate: { ideal: p.fps, max: p.fps } },
+      // suppressLocalAudioPlayback bilerek false: true olursa paylaşılan sekmenin sesi paylaşan kişide de kısılır
+      audio: wantAudio ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false } : false
+    })
+  } catch (e) {
+    if (e?.name === 'NotAllowedError' || e?.name === 'AbortError') return // seçim penceresi kapatıldı
+    return toast('Ekran yakalanamadı: ' + (e?.message || e), 'err')
+  }
+  const track = stream.getVideoTracks()[0]
+  // seçim penceresi açıkken ses kanalından çıkılmış olabilir
+  if (!track || S.voice !== v || S.share) {
+    stream.getTracks().forEach(t => t.stop())
+    return
+  }
+  // kanalda başka biri paylaşıyorsa onun yayını kapanır (devralma)
+  const current = sharerIn(v.ch)
+  const takeover = current && !current.self ? current.id : ''
+  if (wantAudio && !stream.getAudioTracks().length) {
+    toast('Seçtiğin kaynakta ses paylaşımı yok. Ses için Chrome ya da Edge\'de tüm ekranı veya bir sekmeyi seçip "ses paylaş" kutusunu işaretle.', 'err')
+  }
+  track.contentHint = p.hint
+
+  let room
+  try { room = T.joinRoom(S.cfg, 'screen-' + v.ch, { onJoinError: () => joinProblem() }) } catch (e) {
+    console.warn(e)
+    stream.getTracks().forEach(t => t.stop())
+    return toast('Paylaşım odası açılamadı. Birkaç saniye sonra tekrar dene.', 'err')
+  }
+  const sh = { stream, track, room, q, takeover, viewers: new Set(), emptySince: Date.now(), warned: false, idle: 0 }
+  S.share = sh
+  track.addEventListener('ended', () => { if (S.share === sh) stopShare() }) // tarayıcının kendi "paylaşımı durdur" düğmesi
+  room.onPeerJoin = id => {
+    if (S.share !== sh) return
+    room.addStream(stream, { target: id, metadata: { t: 'screen' } })
+    sh.viewers.add(id)
+    sh.emptySince = 0
+    sh.warned = false
+    tuneSoon(id)
+    renderAll()
+  }
+  room.onPeerLeave = id => {
+    sh.viewers.delete(id)
+    if (!sh.viewers.size) { sh.emptySince = Date.now(); sh.warned = false }
+    renderAll()
+  }
+  // izleyen yoksa paylaşım IDLE_SHARE_MS sonra kendiliğinden kapanır (bir dakika önceden uyarılır)
+  sh.idle = setInterval(() => {
+    if (S.share !== sh || sh.viewers.size || !sh.emptySince) return
+    const idle = Date.now() - sh.emptySince
+    if (idle >= IDLE_SHARE_MS) {
+      stopShare(true)
+      toast('Kimse izlemediği için ekran paylaşımı ' + Math.round(IDLE_SHARE_MS / 60000) + ' dakika sonra otomatik kapandı.')
+    } else if (idle >= IDLE_SHARE_MS - 60000 && !sh.warned) {
+      sh.warned = true
+      toast('Kimse izlemiyor, ekran paylaşımı 1 dakika içinde otomatik kapanacak.')
+    }
+  }, 15000)
+  broadcastPresence()
+  renderAll()
+  toast(takeover ? 'Ekran paylaşımı başladı. ' + current.name + ' kullanıcısının yayını kapandı.' : 'Ekran paylaşımı başladı. Kanaldakiler "İzle"ye bastıkça yayın onlara gider.')
+}
+
+function stopShare(quiet) {
+  const sh = S.share
+  if (!sh) return
+  S.share = null
+  clearInterval(sh.idle)
+  if (S.watch?.self) closeWatch() // kendi yayınının önizlemesi de kapanır
+  try { sh.room.leave() } catch { /* yoksay */ }
+  sh.stream.getTracks().forEach(t => t.stop())
+  broadcastPresence()
+  if (!quiet) toast('Ekran paylaşımı durdu.')
+  renderAll()
+}
+
+// Paylaşım sürerken kaliteyi değiştirir
+async function changeShareQuality(q) {
+  const sh = S.share
+  if (!sh || !isShareQ(q)) return
+  const p = SHARE_Q[q]
+  sh.q = q
+  LS.set('shareQ', q)
+  sh.track.contentHint = p.hint
+  try {
+    await sh.track.applyConstraints({ width: { ideal: p.w }, height: { ideal: p.h }, frameRate: { ideal: p.fps, max: p.fps } })
+  } catch (e) { console.warn('yakalama kalitesi değiştirilemedi', e) }
+  for (const id of sh.viewers) tuneSender(id).catch(e => console.warn('gönderici ayarı', e))
+  broadcastPresence()
+  renderAll()
+}
+
+function updateShareEst() {
+  const q = SHARE_Q[$('#shareQ').value] || SHARE_Q['720p60']
+  const per = q.kbps / 1000
+  $('#shareEst').textContent = 'Her izleyici için yaklaşık ' + per + ' Mbps yükleme gerekir (3 kişi izlerse ~' + per * 3 + ' Mbps). Bağlantın ya da bilgisayarın yetmezse akış kendiliğinden kalite düşürür; takılırsa kaliteyi azalt.'
+}
+
+function openShareDlg() {
+  if (!S.voice) return
+  const sharing = !!S.share
+  const cur = !sharing ? sharerIn(S.voice.ch) : null
+  const takeover = !!cur && !cur.self
+  $('#shareWarn').hidden = !takeover
+  if (takeover) $('#shareWarn').textContent = cur.name + ' şu an ekran paylaşıyor. Başlatırsan onun yayını kapanır.'
+  $('#shareStart').textContent = takeover ? 'Devral ve paylaş' : 'Paylaşmaya başla'
+  $('#shareTitle').textContent = sharing ? 'Ekran paylaşımı' : 'Ekran paylaş'
+  const saved = LS.get('shareQ', '720p60')
+  $('#shareQ').value = sharing ? S.share.q : (isShareQ(saved) ? saved : '720p60')
+  $('#shareAudio').checked = sharing ? S.share.stream.getAudioTracks().length > 0 : LS.get('shareAudio', false) === true
+  $('#shareAudio').disabled = sharing
+  $('#shareCancel').hidden = sharing
+  $('#shareStart').hidden = sharing
+  $('#shareStop').hidden = !sharing
+  $('#shareDone').hidden = !sharing
+  updateShareEst()
+  $('#shareDlg').showModal()
+}
+
+/* ---- İzleme ---- */
+
+function refreshStageAudio() {
+  const v = $('#stageVideo')
+  const muted = S.me.deaf || stageMuted || !!S.watch?.self // kendi yayınını izlerken ses kapalı (zaten kaynağı duyuyorsun)
+  v.volume = stageVol
+  v.muted = muted
+  $('#stageMute').innerHTML = ico(muted ? 'speakerOff' : 'speaker')
+  $('#stageMute').setAttribute('aria-pressed', String(muted))
+  $('#stageVol').value = Math.round(stageVol * 100)
+}
+
+function updateStageInfo() {
+  const w = S.watch
+  if (!w) return
+  const v = $('#stageVideo')
+  const q = w.self ? S.share?.q : S.peers.get(w.id)?.share
+  const parts = []
+  if (v.videoWidth) parts.push(v.videoWidth + '×' + v.videoHeight)
+  if (w.fps) parts.push(w.fps + ' fps')
+  if (isShareQ(q)) parts.push('hedef ' + SHARE_Q[q].label)
+  $('#stageInfo').textContent = parts.join(' · ')
+}
+
+// Karelerin gerçekte kaç fps geldiğini ölçer (desteklenmeyen tarayıcıda gösterilmez)
+function trackFps(video, cb) {
+  if (!video.requestVideoFrameCallback) return () => {}
+  let alive = true
+  let n = 0
+  let t0 = performance.now()
+  const tick = () => {
+    if (!alive) return
+    n++
+    const now = performance.now()
+    if (now - t0 >= 1000) { cb(Math.round((n * 1000) / (now - t0))); n = 0; t0 = now }
+    video.requestVideoFrameCallback(tick)
+  }
+  video.requestVideoFrameCallback(tick)
+  return () => { alive = false }
+}
+
+function openWatch(id) {
+  const v = S.voice
+  const p = S.peers.get(id)
+  if (!v || !p?.ready || !p.share || p.ch !== v.ch) return
+  if (S.watch?.id === id) { $('#stage').classList.remove('mini'); return }
+  closeWatch()
+  let room
+  try { room = T.joinRoom(S.cfg, 'screen-' + v.ch, { onJoinError: () => joinProblem() }) } catch (e) {
+    console.warn(e)
+    return toast('Yayına bağlanılamadı. Birkaç saniye sonra tekrar dene.', 'err')
+  }
+  const w = { id, ch: v.ch, room, stream: null, fps: 0, stopFps: null, timer: 0 }
+  S.watch = w
+  // yalnızca presence'ta paylaşıyor görünen kişinin görüntüsü kabul edilir
+  room.onPeerStream = (st, pid) => {
+    if (S.watch !== w || pid !== w.id || !S.peers.get(pid)?.share || !st.getVideoTracks().length) return
+    showStream(w, st)
+  }
+  room.onPeerLeave = pid => {
+    if (S.watch === w && pid === w.id) { closeWatch(); toast(p.name + ' paylaşımı bitirdi.') }
+  }
+  w.timer = setTimeout(() => {
+    if (S.watch === w && !w.stream) $('#stageWait').textContent = 'Bağlanılamadı. Paylaşan kişinin ağı doğrudan bağlantıya izin vermiyor olabilir.'
+  }, 20000)
+
+  const stage = $('#stage')
+  stage.hidden = false
+  stage.classList.remove('mini')
+  $('#stageTitle').textContent = p.name + ' ekranını paylaşıyor'
+  $('#stageInfo').textContent = ''
+  $('#stageWait').hidden = false
+  $('#stageWait').textContent = 'Bağlanıyor…'
+  $('#stageAudio').hidden = true
+  closeDrawers()
+  renderAll()
+}
+
+// Paylaşan kişi kendi yayınını yerel olarak önizler: ağdan geçmez, ek yükleme yapmaz.
+// Gösterilen, yakalanan görüntüdür; izleyenler sıkıştırılmış halini görür.
+function openSelfWatch() {
+  const sh = S.share
+  const v = S.voice
+  if (!sh || !v) return
+  if (S.watch?.self) { $('#stage').classList.remove('mini'); return }
+  closeWatch()
+  const w = { id: S.id, self: true, ch: v.ch, room: null, stream: sh.stream, fps: 0, stopFps: null, timer: 0 }
+  S.watch = w
+  const stage = $('#stage')
+  stage.hidden = false
+  stage.classList.remove('mini')
+  $('#stageTitle').textContent = 'Senin yayının (önizleme)'
+  $('#stageInfo').textContent = ''
+  $('#stageWait').hidden = true
+  showStream(w, sh.stream)
+  closeDrawers()
+  renderAll()
+}
+
+function showStream(w, st) {
+  w.stream = st
+  clearTimeout(w.timer)
+  const video = $('#stageVideo')
+  video.srcObject = st
+  $('#stageWait').hidden = true
+  $('#stageAudio').hidden = !!w.self || !st.getAudioTracks().length
+  refreshStageAudio()
+  video.play().catch(() => {
+    stageMuted = true // tarayıcı sesli otomatik oynatmayı engelledi
+    refreshStageAudio()
+    video.play().catch(() => {})
+    toast('Tarayıcı sesi engelledi. Sesi açmak için hoparlör düğmesine bas.', 'err')
+  })
+  w.stopFps?.()
+  w.stopFps = trackFps(video, fps => { w.fps = fps; updateStageInfo() })
+  updateStageInfo()
+}
+
+function closeWatch() {
+  const w = S.watch
+  if (!w) return
+  S.watch = null
+  clearTimeout(w.timer)
+  w.stopFps?.()
+  const video = $('#stageVideo')
+  video.pause()
+  video.srcObject = null
+  try { w.room?.leave() } catch { /* yoksay */ }
+  const stage = $('#stage')
+  stage.hidden = true
+  stage.classList.remove('mini')
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+  renderAll()
+}
+
+function toggleFullscreen() {
+  const stage = $('#stage')
+  if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return }
+  stage.classList.remove('mini')
+  const r = stage.requestFullscreen?.()
+  if (r?.catch) r.catch(() => toast('Tam ekran açılamadı.', 'err'))
 }
 
 /* ------------------------------------------------------------------ */
@@ -1038,6 +1385,7 @@ function renderChannels() {
         return h('li', {}, h('button', { class: 'vuser' + (pending ? ' pending' : ''), onclick: () => openUser(p.id) },
           avatar(p.name, p.self ? 'me' : p.id, 'small'),
           h('span', { class: 'nm', text: p.name }),
+          p.share ? h('span', { class: 'live-pill', text: 'CANLI', title: 'Ekran paylaşıyor' }) : null,
           (muted || p.deaf) ? h('span', { class: 'st', html: ico(p.deaf ? 'headphonesOff' : 'micOff'), title: p.deaf ? 'Sesi kapalı' : 'Mikrofonu kapalı' }) : null,
           (!p.self && userMuted(p.name)) ? h('span', { class: 'st', html: ico('speakerOff'), title: 'Senin için susturuldu' }) : null))
       })))
@@ -1058,7 +1406,7 @@ function renderMembers() {
       avatar(p.name, null),
       h('span', { class: 'meta' },
         h('strong', {}, p.name, S.adminIds.has(p.id) ? [' ', h('span', { class: 'badge', text: 'Yönetici' })] : null),
-        h('small', { text: p.ch ? 'Sesli: ' + chanName(p.ch) : 'Çevrimiçi' })))))
+        h('small', { text: p.ch ? 'Sesli: ' + chanName(p.ch) + (p.share ? ' · Ekran paylaşıyor' : '') : 'Çevrimiçi' })))))
   }
 
   // Kayıtlı ama şu an bağlı olmayan hesaplar (hesap dizininden) kalıcı olarak çevrimdışı görünür
@@ -1092,15 +1440,40 @@ function renderMe() {
   deaf.innerHTML = ico(S.me.deaf ? 'headphonesOff' : 'headphones')
   deaf.setAttribute('aria-pressed', String(S.me.deaf))
   deaf.setAttribute('aria-label', S.me.deaf ? 'Sesi aç' : 'Sesi kapat')
+
+  // ekran paylaş: ayarların yanındaki simge; ses kanalında değilken kapalı, paylaşırken kırmızı
+  const sb = $('#shareBtn')
+  sb.hidden = !navigator.mediaDevices?.getDisplayMedia
+  sb.disabled = !S.voice
+  sb.setAttribute('aria-pressed', String(!!S.share))
+  const label = S.share ? 'Ekran paylaşımını yönet' : S.voice ? 'Ekran paylaş' : 'Ekran paylaşmak için önce bir ses kanalına katıl'
+  sb.title = label
+  sb.setAttribute('aria-label', label)
 }
 
 function renderVoiceBar() {
   const bar = $('#voiceBar')
   bar.hidden = !S.voice
   if (!S.voice) return
-  const n = roster().filter(p => p.ch === S.voice.ch).length
+  const people = roster()
+  const n = people.filter(p => p.ch === S.voice.ch).length
   $('#vbTitle').textContent = 'Ses bağlı'
   $('#vbSub').textContent = chanName(S.voice.ch) + ', ' + n + ' kişi'
+
+  // ekran paylaşımı: paylaşan kendi yayınını önizler, diğerleri izler
+  const sharer = people.find(p => p.ch === S.voice.ch && p.share && !p.self) || null
+  const wb = $('#watchBtn')
+  wb.hidden = !S.share && !sharer
+  if (S.share) wb.textContent = S.watch?.self ? 'Önizlemeyi aç' : 'Yayınımı izle'
+  else if (sharer) wb.textContent = S.watch?.id === sharer.id ? 'Yayını aç' : 'İzle: ' + sharer.name
+  $('#voiceBar .vb-actions').hidden = wb.hidden
+  const info = $('#shareInfo')
+  info.hidden = !S.share
+  if (S.share) {
+    const k = S.share.viewers.size
+    const mbps = (SHARE_Q[S.share.q].kbps * k) / 1000
+    info.textContent = 'Ekranını paylaşıyorsun (' + SHARE_Q[S.share.q].label + ') · ' + k + ' izleyen' + (k ? ' · ~' + mbps.toFixed(1) + ' Mbps yükleme' : '')
+  }
 }
 
 function renderHeader() {
@@ -1395,6 +1768,7 @@ async function boot(me) {
     renderAll()
   }
   lobby.onPeerLeave = id => {
+    if (S.watch?.id === id) { closeWatch(); toast((S.peers.get(id)?.name || 'Paylaşan kişi') + ' ayrıldı, yayın bitti.') }
     S.peers.delete(id)
     S.adminIds.delete(id)
     S.srvMuted.delete(id)
@@ -1661,6 +2035,39 @@ function wire() {
     b.dataset.stuck = b.scrollHeight - b.scrollTop - b.clientHeight < 90 ? '1' : '0'
   })
   $('#imgDlg').addEventListener('click', () => $('#imgDlg').close())
+
+  // ekran paylaşımı: başlatma penceresi
+  $('#shareBtn').addEventListener('click', openShareDlg)
+  $('#shareQ').addEventListener('change', e => { updateShareEst(); if (S.share) changeShareQuality(e.target.value) })
+  $('#shareCancel').addEventListener('click', () => $('#shareDlg').close())
+  $('#shareDone').addEventListener('click', () => $('#shareDlg').close())
+  $('#shareStop').addEventListener('click', () => { $('#shareDlg').close(); stopShare() })
+  $('#shareForm').addEventListener('submit', e => {
+    e.preventDefault()
+    $('#shareDlg').close()
+    startShare() // seçim penceresi, bu tıklamanın hemen ardından açılmalı
+  })
+
+  // ekran paylaşımı: izleme paneli
+  $('#watchBtn').addEventListener('click', () => {
+    if (S.share) return openSelfWatch()
+    const other = S.voice && sharerIn(S.voice.ch)
+    if (other && !other.self) openWatch(other.id)
+  })
+  $('#stageClose').addEventListener('click', closeWatch)
+  $('#stageMini').addEventListener('click', () => $('#stage').classList.toggle('mini'))
+  $('#stageFull').addEventListener('click', toggleFullscreen)
+  $('#stageVideo').addEventListener('click', () => $('#stage').classList.remove('mini'))
+  $('#stageVideo').addEventListener('loadedmetadata', updateStageInfo)
+  $('#stageVideo').addEventListener('resize', updateStageInfo)
+  $('#stageMute').addEventListener('click', () => { stageMuted = !stageMuted; refreshStageAudio() })
+  $('#stageVol').addEventListener('input', e => {
+    stageVol = Number(e.target.value) / 100
+    stageMuted = false
+    LS.set('stageVol', stageVol)
+    refreshStageAudio()
+  })
+  refreshStageAudio()
 
   $('#micBtn').addEventListener('click', toggleMute)
   $('#deafBtn').addEventListener('click', toggleDeaf)
