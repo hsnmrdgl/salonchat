@@ -314,8 +314,16 @@ input[type="range"] { padding: 0; accent-color: var(--accent); }
 
 .scrim { position: fixed; inset: 0; background: rgba(8, 6, 16, .6); z-index: 20; }
 
-/* ---------- Mobil ---------- */
+/* ---------- Orta genişlik: paneller görünür kalır ama daralır ---------- */
 @media (max-width: 960px) {
+  .app { grid-template-columns: 224px minmax(0, 1fr) 188px; }
+  .top-sub { display: none; }
+  .rings { width: min(36vw, 440px); }
+}
+
+/* ---------- Mobil: paneller çekmeceye döner ----------
+   Bu değer app.js'teki matchMedia('(max-width: 780px)') ile aynı olmalı. */
+@media (max-width: 780px) {
   .only-mobile { display: inline-grid; }
   .app { grid-template-columns: minmax(0, 1fr); }
   .side, .members { position: fixed; top: 0; bottom: 0; z-index: 30; width: min(320px, 86vw); transition: transform .22s ease; }
