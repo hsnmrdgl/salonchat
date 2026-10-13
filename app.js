@@ -60,7 +60,9 @@ const ICONS = {
   menu: svg('<line x1="4" x2="20" y1="7" y2="7"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="17" y2="17"/>'),
   users: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
   send: svg('<line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>'),
-  x: svg('<line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>')
+  x: svg('<line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>'),
+  copy: svg('<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'),
+  trash: svg('<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>')
 }
 const ico = name => ICONS[name] || ''
 
@@ -166,7 +168,9 @@ const ERR = {
   bad_credentials: 'Kullanıcı adı ya da şifre yanlış.',
   locked: 'Çok fazla yanlış deneme yapıldı. 10 dakika sonra tekrar dene.',
   name_taken: 'Bu kullanıcı adı alınmış. Başka bir ad seç.',
-  bad_server_password: 'Sunucu şifresi yanlış.',
+  bad_invite: 'Davet kodu yanlış ya da daha önce kullanılmış.',
+  not_admin: 'Bu işlem için yönetici olmalısın.',
+  try_again: 'Kod üretilemedi, tekrar dene.',
   invalid_name: NEW_NAME_RULE,
   weak_password: 'Şifre 6-72 karakter olmalı.',
   invalid_key: 'Kimlik anahtarı oluşturulamadı. Sayfayı yenileyip tekrar dene.',
@@ -207,7 +211,7 @@ async function rpc(fn, args) {
   const { data, error } = await sb.rpc(fn, args)
   if (!error) return data
   console.warn(error)
-  if (error.code === 'PGRST202' || /could not find the function/i.test(error.message)) throw new AuthError('Supabase kurulumu eksik: supabase klasöründeki SQL dosyaları (setup.sql, update-1.1.sql, update-1.2.sql) sırayla çalıştırılmamış.')
+  if (error.code === 'PGRST202' || /could not find the function/i.test(error.message)) throw new AuthError('Supabase kurulumu eksik: supabase klasöründeki SQL dosyaları (setup.sql, update-1.1.sql, update-1.2.sql, update-1.3.sql, update-1.4.sql) sırayla çalıştırılmamış.')
   if (/jwt|token/i.test(error.message)) throw new AuthError('Oturum süresi doldu. Sayfayı yenileyip tekrar giriş yap.')
   throw new AuthError('Sunucuya ulaşılamadı: ' + error.message)
 }
@@ -1634,6 +1638,7 @@ async function openSettings() {
   const s = S.settings
   draft = { sounds: s.sounds, mic: s.mic, micVol: s.micVol, outVol: s.outVol, ns: s.ns, gate: s.gate, thresh: s.thresh }
   $('#setAccount').textContent = S.name + (isAdmin() ? ' (yönetici)' : '')
+  $('#invField').hidden = !isAdmin()
   syncAudioControls()
   await fillMics()
   $('#settingsDlg').showModal()
@@ -1835,6 +1840,7 @@ function showLoginError(msg) {
 
 function showApp() {
   $('#login').hidden = true
+  $('#invite').hidden = true
   $('#app').hidden = false
   document.title = CONFIG.serverName || 'Salon'
   $('#serverName').textContent = CONFIG.serverName || 'Salon'
@@ -1843,8 +1849,146 @@ function showApp() {
   renderMe()
 }
 
+// Giriş ve (gerekiyorsa) davet kodu sonrası ortak başlangıç
+async function start(me) {
+  setBusy(true, 'Odaya bağlanılıyor…')
+  await boot(me)
+  LS.set('name', S.name)
+  showApp()
+  startLoops()
+  broadcastPresence()
+  updateNet()
+  renderAll()
+  renderMessages()
+}
+
+// Hesabı açık ama henüz sunucuya girmemiş (üye olmayan) kullanıcı: davet kodu ekranı
+function showInvite(username) {
+  $('#login').hidden = true
+  $('#invite').hidden = false
+  $('#inviteHello').textContent = 'Merhaba ' + username + '. Sunucuya katılmak için yöneticiden aldığın davet kodunu yaz.'
+  $('#inviteError').hidden = true
+  $('#inviteCode').focus()
+}
+
+let redeeming = false
+async function redeem(raw) {
+  if (redeeming) return
+  const err = $('#inviteError')
+  const fail = msg => { err.hidden = false; err.textContent = msg }
+  err.hidden = true
+  const code = String(raw || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase()
+  if (code.length !== 8) return fail('Davet kodu 8 karakter olmalı.')
+  redeeming = true
+  $('#inviteSubmit').disabled = true
+  try {
+    await loadLibs()
+    await ensureSession()
+    const res = await rpc('salon_redeem_invite', { p_code: code })
+    if (!res?.ok) throw new AuthError(ERR[res?.error] || 'İşlem başarısız oldu.')
+    await start(res.me)
+  } catch (e) {
+    console.warn(e)
+    teardown()
+    fail(e instanceof AuthError ? e.message : 'Bağlanılamadı. Sayfayı yenileyip tekrar dene.')
+  } finally {
+    redeeming = false
+    $('#inviteSubmit').disabled = false
+  }
+}
+
+async function logout() {
+  try { await rpc('salon_logout') } catch { /* yoksay */ }
+  try { await sb.auth.signOut() } catch { /* yoksay */ }
+  location.reload()
+}
+
+/* ---- Davet kodları (yönetici) ---- */
+
+const fmtCode = c => c.slice(0, 4) + '-' + c.slice(4)
+const fmtDate = ts => new Date(ts).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true } catch { return false }
+}
+
+function invError(msg) {
+  const el = $('#invErr')
+  el.hidden = !msg
+  el.textContent = msg || ''
+}
+
+async function adminRpc(fn, args) {
+  const res = await rpc(fn, args)
+  if (!res?.ok) throw new AuthError(ERR[res?.error] || 'İşlem başarısız oldu.')
+  return res
+}
+
+async function loadInvites() {
+  invError('')
+  let list
+  try { list = (await adminRpc('salon_invites')).list } catch (e) {
+    return invError(e instanceof AuthError ? e.message : 'Kodlar yüklenemedi.')
+  }
+  if (!Array.isArray(list)) list = []
+  const ul = $('#invList')
+  ul.textContent = ''
+  $('#invEmpty').hidden = list.length > 0
+  for (const i of list) {
+    const code = str(i.code, 8)
+    ul.append(h('li', { class: 'inv' + (i.used ? ' used' : '') },
+      h('div', { class: 'info' },
+        h('span', { class: 'code', text: fmtCode(code) }),
+        h('small', { text: i.used ? 'Kullanan: ' + (i.by || 'silinmiş hesap') : fmtDate(i.ts) + ' tarihinde oluşturuldu' })),
+      i.used ? null : h('button', {
+        type: 'button', class: 'icon-btn', title: 'Kodu kopyala', 'aria-label': 'Kodu kopyala', html: ico('copy'),
+        onclick: async () => { const ok = await copyText(fmtCode(code)); toast(ok ? 'Kod kopyalandı.' : 'Kopyalanamadı, kodu elle seçip kopyala.', ok ? '' : 'err') }
+      }),
+      h('button', {
+        type: 'button', class: 'icon-btn danger', title: i.used ? 'Kaydı sil' : 'Kodu sil', 'aria-label': i.used ? 'Kaydı sil' : 'Kodu sil', html: ico('trash'),
+        onclick: () => deleteInvite(i.id)
+      })))
+  }
+}
+
+let invBusy = false
+async function newInvite() {
+  if (invBusy) return
+  invBusy = true
+  $('#invNew').disabled = true
+  invError('')
+  try {
+    const res = await adminRpc('salon_create_invite')
+    const code = fmtCode(str(res.code, 8))
+    const copied = await copyText(code)
+    toast(copied ? 'Kod oluşturuldu ve kopyalandı: ' + code : 'Kod oluşturuldu: ' + code)
+    await loadInvites()
+  } catch (e) {
+    invError(e instanceof AuthError ? e.message : 'Kod oluşturulamadı.')
+  } finally {
+    invBusy = false
+    $('#invNew').disabled = false
+  }
+}
+
+async function deleteInvite(id) {
+  try {
+    await adminRpc('salon_delete_invite', { p_id: id })
+    await loadInvites()
+  } catch (e) {
+    invError(e instanceof AuthError ? e.message : 'Kod silinemedi.')
+  }
+}
+
+function openInvites() {
+  if (!isAdmin()) return
+  $('#settingsDlg').close()
+  $('#invDlg').showModal()
+  loadInvites()
+}
+
 let entering = false
-async function enter({ mode, name, password, code, auto }) {
+async function enter({ mode, name, password, auto }) {
   if (entering) return
   entering = true
   $('#loginError').hidden = true
@@ -1863,22 +2007,20 @@ async function enter({ mode, name, password, code, auto }) {
       if (mode === 'register') {
         const seed = crypto.getRandomValues(new Uint8Array(32))
         const pk = hex(await ed.getPublicKeyAsync(seed))
-        res = await rpc('salon_register', { p_username: name, p_password: password, p_server_password: code, p_pubkey: pk, p_seed: hex(seed) })
+        res = await rpc('salon_register', { p_username: name, p_password: password, p_pubkey: pk, p_seed: hex(seed) })
       } else {
         res = await rpc('salon_login', { p_username: name, p_password: password })
       }
       if (!res?.ok) throw new AuthError(ERR[res?.error] || 'İşlem başarısız oldu.')
       me = res.me
     }
-    setBusy(true, 'Odaya bağlanılıyor…')
-    await boot(me)
-    LS.set('name', S.name)
-    showApp()
-    startLoops()
-    broadcastPresence()
-    updateNet()
-    renderAll()
-    renderMessages()
+    // Hesap var ama henüz sunucuya üye değil: davet kodu ekranı
+    if (me.pending) {
+      LS.set('name', normName(me.username))
+      showInvite(normName(me.username))
+      return
+    }
+    await start(me)
   } catch (e) {
     console.warn(e)
     teardown()
@@ -1908,8 +2050,6 @@ function wire() {
     $('#tabRegister').setAttribute('aria-selected', String(m === 'register'))
     $('#pass2Field').hidden = m !== 'register'
     $('#pass2Input').required = m === 'register'
-    $('#codeField').hidden = m !== 'register'
-    $('#codeInput').required = m === 'register'
     $('#nameHint').hidden = m !== 'register'
     $('#nameInput').minLength = m === 'register' ? MIN_NEW_NAME : 0
     $('#forgotBtn').hidden = m !== 'login'
@@ -1933,13 +2073,8 @@ function wire() {
     } else if (!validName(name)) return showLoginError(NAME_RULE)
     const password = $('#passInput').value
     if (password.length < 6) return showLoginError('Şifre en az 6 karakter olmalı.')
-    let code = ''
-    if (mode === 'register') {
-      if (password !== $('#pass2Input').value) return showLoginError('Şifreler aynı değil.')
-      code = $('#codeInput').value.trim()
-      if (!code) return showLoginError('Sunucu şifresini yaz.')
-    }
-    enter({ mode, name, password, code })
+    if (mode === 'register' && password !== $('#pass2Input').value) return showLoginError('Şifreler aynı değil.')
+    enter({ mode, name, password })
   })
 
   // şifremi unuttum
@@ -2127,11 +2262,18 @@ function wire() {
     setOutVol(S.settings.outVol) // kaydedilmeyen hoparlör seviyesi geri alınır
     draft = null
   })
-  $('#logoutBtn').addEventListener('click', async () => {
-    try { await rpc('salon_logout') } catch { /* yoksay */ }
-    try { await sb.auth.signOut() } catch { /* yoksay */ }
-    location.reload()
+  $('#logoutBtn').addEventListener('click', logout)
+
+  // davet kodu ekranı (üye olmayan hesap)
+  $('#inviteForm').addEventListener('submit', e => {
+    e.preventDefault()
+    redeem($('#inviteCode').value)
   })
+  $('#inviteLogout').addEventListener('click', logout)
+
+  // davet kodları penceresi (yönetici)
+  $('#invOpen').addEventListener('click', openInvites)
+  $('#invNew').addEventListener('click', newInvite)
 
   $('#udVol').addEventListener('input', e => {
     const v = Number(e.target.value)
