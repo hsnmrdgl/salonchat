@@ -334,3 +334,14 @@ input[type="range"] { padding: 0; accent-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-delay: 0s !important; transition-duration: .001ms !important; }
 }
+
+/* ---------- Davet kodları ---------- */
+.inv-list { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; max-height: min(52vh, 420px); overflow-y: auto; }
+.inv { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.inv .code { font: 700 17px/1 ui-monospace, Consolas, monospace; letter-spacing: .08em; color: var(--talk); }
+.inv .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.inv .info small { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv.used .code { color: var(--faint); text-decoration: line-through; }
+.inv .icon-btn { width: 32px; height: 32px; }
+.inv .icon-btn svg { width: 17px; height: 17px; }
+#inviteCode { font: 700 18px/1 ui-monospace, Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; }
