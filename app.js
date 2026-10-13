@@ -1025,8 +1025,8 @@ function toggleDeaf() {
 // Ağ doğrudan (kişiden kişiye) olduğu için paylaşanın yüklemesi izleyen sayısı kadar artar.
 
 const SHARE_Q = {
-  '1080p60': { label: '1080p 60 fps', w: 1920, h: 1080, fps: 60, kbps: 8000, hint: 'motion' },
-  '720p60': { label: '720p 60 fps', w: 1280, h: 720, fps: 60, kbps: 4500, hint: 'motion' },
+  '1080p60': { label: '1080p 60 fps', w: 1920, h: 1080, fps: 60, kbps: 8000, hint: 'detail' },
+  '720p60': { label: '720p 60 fps', w: 1280, h: 720, fps: 60, kbps: 4500, hint: 'detail' },
   '1080p30': { label: '1080p 30 fps', w: 1920, h: 1080, fps: 30, kbps: 5000, hint: 'detail' },
   '720p30': { label: '720p 30 fps', w: 1280, h: 720, fps: 30, kbps: 2500, hint: 'detail' }
 }
@@ -1050,6 +1050,9 @@ async function tuneSender(id) {
   const q = SHARE_Q[sh.q]
   const params = sender.getParameters()
   if (!params.encodings?.length) params.encodings = [{}]
+  // Bant genişliği ya da CPU yetmediğinde çözünürlük yerine kare hızı düşsün (ekran yazıları okunaklı kalır).
+  // Her tarayıcı bu alanı desteklemez; desteklemeyende contentHint = 'detail' aynı yönde çalışır.
+  params.degradationPreference = 'maintain-resolution'
   const enc = params.encodings[0]
   enc.maxBitrate = q.kbps * 1000
   enc.maxFramerate = q.fps
@@ -1058,6 +1061,21 @@ async function tuneSender(id) {
   await sender.setParameters(params)
   return true
 }
+// İzleyici sayısına göre kalite önerisi. Her izleyiciye ayrı kodlama ve yükleme yapıldığı için toplam yükleme
+// (bit hızı x izleyici) bu bütçeyi aşmasın diye en yüksek uygun profil önerilir.
+const SHARE_BUDGET_KBPS = 12000
+const SHARE_ORDER = ['1080p60', '1080p30', '720p60', '720p30'] // bit hızına göre azalan
+const recommendQ = n => SHARE_ORDER.find(k => SHARE_Q[k].kbps * Math.max(1, n) <= SHARE_BUDGET_KBPS) || '720p30'
+
+function suggestQuality(sh) {
+  const n = sh.viewers.size
+  if (n < 2 || sh.suggestedFor === n) return
+  const rec = recommendQ(n)
+  if (SHARE_Q[rec].kbps >= SHARE_Q[sh.q].kbps) return // zaten uygun ya da daha düşük
+  sh.suggestedFor = n
+  toast(n + ' kişi izliyor. Yayın takılıyor ya da bulanıklaşıyorsa kaliteyi "' + SHARE_Q[rec].label + '" yap (paylaşım penceresinden).')
+}
+
 // Bağlantı kurulurken gönderici henüz hazır olmayabilir, bu yüzden birkaç kez denenir
 const tuneSoon = id => { for (const ms of [300, 1500, 4000]) setTimeout(() => tuneSender(id).catch(e => console.warn('gönderici ayarı', e)), ms) }
 
@@ -1102,7 +1120,7 @@ async function startShare() {
     stream.getTracks().forEach(t => t.stop())
     return toast('Paylaşım odası açılamadı. Birkaç saniye sonra tekrar dene.', 'err')
   }
-  const sh = { stream, track, room, q, takeover, viewers: new Set(), emptySince: Date.now(), warned: false, idle: 0 }
+  const sh = { stream, track, room, q, takeover, viewers: new Set(), emptySince: Date.now(), warned: false, idle: 0, suggestedFor: 0 }
   S.share = sh
   track.addEventListener('ended', () => { if (S.share === sh) stopShare() }) // tarayıcının kendi "paylaşımı durdur" düğmesi
   room.onPeerJoin = id => {
@@ -1112,6 +1130,7 @@ async function startShare() {
     sh.emptySince = 0
     sh.warned = false
     tuneSoon(id)
+    suggestQuality(sh)
     renderAll()
   }
   room.onPeerLeave = id => {
@@ -1168,7 +1187,7 @@ async function changeShareQuality(q) {
 function updateShareEst() {
   const q = SHARE_Q[$('#shareQ').value] || SHARE_Q['720p60']
   const per = q.kbps / 1000
-  $('#shareEst').textContent = 'Her izleyici için yaklaşık ' + per + ' Mbps yükleme gerekir (3 kişi izlerse ~' + per * 3 + ' Mbps). Bağlantın ya da bilgisayarın yetmezse akış kendiliğinden kalite düşürür; takılırsa kaliteyi azalt.'
+  $('#shareEst').textContent = 'Her izleyici için yaklaşık ' + per + ' Mbps yükleme gerekir (3 kişi izlerse ~' + per * 3 + ' Mbps). Bağlantın ya da bilgisayarın yetmezse akış kendiliğinden kalite düşürür; takılırsa kaliteyi azalt. Öneri: 1 izleyici 1080p 60 fps, 2 izleyici 1080p 30 fps, 3 ve üzeri 720p 30 fps.'
 }
 
 function openShareDlg() {
