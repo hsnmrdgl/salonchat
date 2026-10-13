@@ -1518,7 +1518,7 @@ function viewChannel(id) {
   renderMessages({ stick: true })
   renderAll()
   closeDrawers()
-  if (!matchMedia('(max-width: 960px)').matches) $('#msgInput').focus()
+  if (!matchMedia('(max-width: 780px)').matches) $('#msgInput').focus() // style.css'teki mobil sınırla aynı olmalı
 }
 
 /* ------------------------------------------------------------------ */
