@@ -39,17 +39,30 @@
       <input id="pass2Input" type="password" autocomplete="new-password">
     </div>
 
-    <div id="codeField" hidden>
-      <label for="codeInput">Sunucu şifresi</label>
-      <input id="codeInput" type="password" placeholder="Sunucu sahibinden öğren" autocomplete="off">
-      <p class="hint" id="codeHint">Sunucu sahibinden öğren. Sadece kayıt olurken gerekir.</p>
-    </div>
-
     <button type="button" id="forgotBtn" class="linkbtn">Şifremi unuttum</button>
 
     <button class="btn primary" id="loginBtn" type="submit">Giriş yap</button>
     <p id="loginStatus" class="hint status" role="status" hidden></p>
     <p id="loginError" class="error" role="alert" hidden></p>
+  </form>
+</section>
+
+<!-- Davet kodu: hesabı açık ama henüz sunucuya girmemiş kullanıcılar için -->
+<section id="invite" class="login" hidden>
+  <div class="login-art" aria-hidden="true">
+    <div class="rings"><i></i><i></i><i></i><b></b></div>
+  </div>
+  <form id="inviteForm" class="login-form" autocomplete="off">
+    <h1>Davet kodu</h1>
+    <p class="lead" id="inviteHello">Sunucuya katılmak için yöneticiden aldığın davet kodunu yaz.</p>
+
+    <label for="inviteCode">Davet kodu</label>
+    <input id="inviteCode" maxlength="12" required placeholder="Örn. K7M2-QX9P" autocapitalize="characters" autocomplete="off" spellcheck="false">
+    <p class="hint">8 karakter. Kod tek kullanımlıktır ve sadece bir kez girmen yeterli.</p>
+
+    <button class="btn primary" id="inviteSubmit" type="submit">Katıl</button>
+    <button type="button" id="inviteLogout" class="linkbtn">Çıkış yap</button>
+    <p id="inviteError" class="error" role="alert" hidden></p>
   </form>
 </section>
 
@@ -203,6 +216,14 @@
       </div>
     </div>
 
+    <div class="field" id="invField" hidden>
+      <label>Davet kodları</label>
+      <p class="muted">Yeni kullanıcılar bu kodlarla sunucuya katılır.</p>
+      <div class="row">
+        <button type="button" id="invOpen" class="btn">Davet kodlarını yönet</button>
+      </div>
+    </div>
+
     <div class="field">
       <label for="setMic">Mikrofon</label>
       <select id="setMic"><option value="">Varsayılan</option></select>
@@ -254,6 +275,23 @@
       <button class="btn primary" value="save" id="saveSettings">Kaydet</button>
     </div>
   </form>
+</dialog>
+
+<!-- Davet kodları (yönetici) -->
+<dialog id="invDlg" class="dlg">
+  <div>
+    <header class="dlg-head">
+      <h3>Davet kodları</h3>
+      <button type="button" id="invClose" class="icon-btn" aria-label="Kapat" data-icon="x"></button>
+    </header>
+    <p class="muted">Her kod 8 karakterlidir, bir kez kullanılabilir ve kullanılana ya da sen silene kadar geçerlidir.</p>
+    <div class="row">
+      <button type="button" id="invNew" class="btn primary">Yeni kod oluştur</button>
+    </div>
+    <ul id="invList" class="inv-list"></ul>
+    <p id="invEmpty" class="hint" hidden>Henüz davet kodu yok.</p>
+    <p id="invErr" class="error" role="alert" hidden></p>
+  </div>
 </dialog>
 
 <!-- Kullanıcı adı değiştirme -->
