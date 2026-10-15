@@ -91,6 +91,8 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
   transition: box-shadow .09s linear;
 }
 .avatar.big { width: 52px; height: 52px; font-size: 22px; }
+.avatar.xl { width: 76px; height: 76px; font-size: 32px; }
+.joined { color: var(--faint); font-size: 12px; margin-top: 2px; }
 .avatar.small { width: 26px; height: 26px; font-size: 12px; }
 .speaking .avatar,
 .avatar.speaking {
@@ -302,8 +304,7 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .status-item:hover { background: var(--surface); }
 .status-item[aria-checked="true"] { background: var(--surface); font-weight: 700; }
 .member .m-tag { margin-top: 2px; }
-.member.off { opacity: .5; cursor: default; }
-.member.off:hover { background: transparent; }
+.member.off { opacity: .5; }
 .member.off .avatar { filter: grayscale(.7); }
 
 /* ---------- Pencereler ---------- */
