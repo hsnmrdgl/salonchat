@@ -80,6 +80,16 @@ const adminOnly = new Set(allChannels.filter(c => c.adminOnly).map(c => c.id)) /
 const RETENTION = 7 * 24 * 3600e3 // mesajlar en fazla 1 hafta saklanır (sunucu da 7 günden eskiyi siler)
 const IMG_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']) // SVG bilerek yok: içinde kod olabilir
 
+// Kullanıcının seçebildiği durumlar. Renkler style.css'te (.sdot ve .ring.st-*).
+// Durum yalnızca görünümdür: sesi ya da bildirimleri etkilemez, presence ile diğerlerine duyurulur.
+const STATUSES = [
+  { id: 'online', label: 'Çevrimiçi' },
+  { id: 'away', label: 'Dışarıda' },
+  { id: 'busy', label: 'Meşgul' }
+]
+const statusId = v => (STATUSES.some(s => s.id === v) ? v : 'online')
+const statusOf = id => STATUSES.find(s => s.id === id) || STATUSES[0]
+
 const S = {
   id: '',
   name: '',
@@ -97,7 +107,7 @@ const S = {
   history: new Map(),
   unread: new Set(),
   view: (textChannels[0] || {}).id, // sesli kanallarda metin yok, görünüm hep bir metin kanalıdır
-  me: { muted: false, deaf: false, mutedBefore: false, ch: null },
+  me: { muted: false, deaf: false, mutedBefore: false, ch: null, status: statusId(LS.get('status', 'online')) },
   voice: null,
   joining: false,
   settings: {
@@ -375,7 +385,7 @@ function applyCmd(cmd) {
 /* Katılımcılar (presence)                                             */
 /* ------------------------------------------------------------------ */
 
-const myPresence = () => ({ n: S.name, s: S.idSig, c: S.me.ch, m: S.me.muted, d: S.me.deaf, sh: S.share ? S.share.q : '', tk: S.share ? S.share.takeover : '' })
+const myPresence = () => ({ n: S.name, s: S.idSig, c: S.me.ch, m: S.me.muted, d: S.me.deaf, st: S.me.status, sh: S.share ? S.share.q : '', tk: S.share ? S.share.takeover : '' })
 const broadcastPresence = () => { if (!S.live) return; try { A.presence?.send(myPresence()) } catch (e) { console.warn(e) } }
 
 const retryingPresence = new Set()
@@ -405,6 +415,7 @@ async function onPresence(d, peerId) {
     deaf: !!d.d,
     share: voiceIds.has(d.c) && isShareQ(d.sh) ? d.sh : '', // ekran paylaşıyorsa kalite anahtarı
     takeover: str(d.tk, 80), // paylaşımı devraldığı kişinin kimliği (o kişinin yayını kapanır)
+    status: statusId(d.st),
     ready: true
   }
   S.peers.set(peerId, peer)
@@ -439,7 +450,7 @@ async function onPresence(d, peerId) {
 }
 
 function roster() {
-  const list = [{ id: S.id, name: S.name, ch: S.me.ch, muted: S.me.muted, deaf: S.me.deaf, share: S.share ? S.share.q : '', self: true }]
+  const list = [{ id: S.id, name: S.name, ch: S.me.ch, muted: S.me.muted, deaf: S.me.deaf, share: S.share ? S.share.q : '', status: S.me.status, self: true }]
   for (const [id, p] of S.peers) if (p.ready) list.push({ id, ...p })
   return list.sort((a, b) => a.name.localeCompare(b.name, 'tr'))
 }
@@ -1520,8 +1531,8 @@ function renderMembers() {
   ul.textContent = ''
   for (const p of people) {
     // data-uid verilmez: konuşma halkası burada değil, yalnızca soldaki kanal listesinde görünür
-    ul.append(h('li', {}, h('button', { class: 'member', onclick: () => openUser(p.id) },
-      avatar(p.name, null, 'ring on'),
+    ul.append(h('li', {}, h('button', { class: 'member', title: statusOf(p.status).label, onclick: () => openUser(p.id) },
+      avatar(p.name, null, 'ring st-' + statusId(p.status)),
       h('span', { class: 'meta' },
         h('strong', {}, p.name),
         S.adminIds.has(p.id) ? h('span', { class: 'm-tag' }, h('span', { class: 'badge', text: 'Yönetici' })) : null,
@@ -1536,7 +1547,7 @@ function renderMembers() {
   if (!offline.length) return
   ul.append(h('li', { class: 'm-sec', text: 'Çevrimdışı (' + offline.length + ')' }))
   for (const e of offline) {
-    ul.append(h('li', {}, h('div', { class: 'member off' },
+    ul.append(h('li', {}, h('div', { class: 'member off', title: 'Çevrimdışı' },
       avatar(e.name, null, 'ring'),
       h('span', { class: 'meta' },
         h('strong', {}, e.name),
@@ -1546,10 +1557,15 @@ function renderMembers() {
 
 function renderMe() {
   const muted = S.me.muted || S.srvMuted.has(S.id)
-  const state = S.srvMuted.has(S.id) ? 'Yönetici seni susturdu' : isAdmin() ? 'Yönetici' : S.voice ? 'Ses: ' + chanName(S.voice.ch) : 'Çevrimiçi'
+  const state = S.srvMuted.has(S.id) ? 'Yönetici seni susturdu' : isAdmin() ? 'Yönetici' : S.voice ? 'Ses: ' + chanName(S.voice.ch) : statusOf(S.me.status).label
   const av = $('#meAvatar')
   paintAvatar(av, S.name)
   $('#meName').textContent = S.name
+  for (const s of STATUSES) av.classList.toggle('st-' + s.id, s.id === S.me.status)
+  $('#statusDot').className = 'sdot ' + S.me.status
+  const sBtn = $('#statusBtn')
+  sBtn.title = 'Durum: ' + statusOf(S.me.status).label
+  sBtn.setAttribute('aria-label', sBtn.title)
   $('#meBtn').title = S.name + ' · ' + state
   $('#profName').textContent = S.name
   $('#profState').textContent = state
@@ -1625,6 +1641,36 @@ function viewChannel(id) {
 /* ------------------------------------------------------------------ */
 /* Kullanıcı penceresi ve ayarlar                                      */
 /* ------------------------------------------------------------------ */
+
+/* ---- Durum seçici ---- */
+
+function setStatus(id) {
+  S.me.status = statusId(id)
+  LS.set('status', S.me.status)
+  toggleStatusMenu(false)
+  broadcastPresence()
+  renderAll()
+}
+
+function renderStatusMenu() {
+  const m = $('#statusMenu')
+  m.textContent = ''
+  for (const s of STATUSES) {
+    m.append(h('button', {
+      type: 'button', role: 'menuitemradio', class: 'status-item',
+      'aria-checked': String(s.id === S.me.status),
+      onclick: () => setStatus(s.id)
+    }, h('i', { class: 'sdot ' + s.id }), h('span', { text: s.label })))
+  }
+}
+
+function toggleStatusMenu(force) {
+  const m = $('#statusMenu')
+  const open = force ?? m.hidden
+  m.hidden = !open
+  $('#statusBtn').setAttribute('aria-expanded', String(open))
+  if (open) renderStatusMenu()
+}
 
 let userDlgId = null
 function openUser(id) {
@@ -2412,7 +2458,9 @@ function wire() {
   $('#membersBtn').addEventListener('click', openMembers)
   $('#closeMembers').addEventListener('click', closeDrawers)
   $('#scrim').addEventListener('click', closeDrawers)
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawers() })
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeDrawers(); toggleStatusMenu(false) } })
+  $('#statusBtn').addEventListener('click', () => toggleStatusMenu())
+  document.addEventListener('click', e => { if (!e.target.closest('#statusMenu, #statusBtn')) toggleStatusMenu(false) })
 
   $('#saveSettings').addEventListener('click', saveSettings)
 
