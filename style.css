@@ -82,7 +82,7 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
   --lvl: 0;
   display: inline-grid; place-items: center; flex: none;
   width: 32px; height: 32px; border-radius: 50%;
-  background: hsl(var(--h) 55% 38%);
+  background: hsl(var(--h) 55% 38%) center / cover no-repeat;
   color: #fff; font: 700 14px/1 var(--display);
   user-select: none;
   box-shadow: 0 0 0 0 transparent;
