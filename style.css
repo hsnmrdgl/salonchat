@@ -13,6 +13,8 @@
   --talk: #ffc65c;
   --danger: #ff6f8e;
   --ok: #58d6a4;
+  --away: #ffb020;
+  --busy: #f04b5e;
   --r: 12px;
   --display: "Bricolage Grotesque", "Hanken Grotesk", system-ui, sans-serif;
   --body: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -282,8 +284,23 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .member .meta small { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Durum halkası: yeşil = çevrimiçi, gri = çevrimdışı. Konuşurken halka sarıya döner ve kalınlaşır. */
 .avatar.ring { outline: 2px solid var(--faint); outline-offset: 2px; }
-.avatar.ring.on { outline-color: var(--ok); }
-.avatar.ring.speaking { box-shadow: none; outline-color: var(--talk); outline-width: calc(2px + var(--lvl) * 3px); }
+.avatar.ring.st-online { outline-color: var(--ok); }
+.avatar.ring.st-away { outline-color: var(--away); }
+.avatar.ring.st-busy { outline-color: var(--busy); }
+.avatar.ring.speaking { box-shadow: none; outline-width: calc(2px + var(--lvl) * 3px); }
+
+/* Durum noktası ve seçici menü */
+.sdot { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--faint); }
+.sdot.online { background: var(--ok); }
+.sdot.away { background: var(--away); }
+.sdot.busy { background: var(--busy); }
+.me { position: relative; }
+.me .status-btn { width: auto; padding: 0 8px; display: inline-flex; align-items: center; gap: 7px; }
+.status-btn .caret { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }
+.status-menu { position: absolute; right: 8px; bottom: calc(100% + 6px); z-index: 40; min-width: 176px; display: flex; flex-direction: column; gap: 2px; padding: 6px; background: var(--raise); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, .5); }
+.status-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; }
+.status-item:hover { background: var(--surface); }
+.status-item[aria-checked="true"] { background: var(--surface); font-weight: 700; }
 .member .m-tag { margin-top: 2px; }
 .member.off { opacity: .5; cursor: default; }
 .member.off:hover { background: transparent; }
