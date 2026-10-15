@@ -1450,11 +1450,16 @@ function renderMembers() {
 
 function renderMe() {
   const muted = S.me.muted || S.srvMuted.has(S.id)
-  $('#meName').textContent = S.name
-  $('#meState').textContent = S.srvMuted.has(S.id) ? 'Yönetici seni susturdu' : isAdmin() ? 'Yönetici' : S.voice ? 'Ses: ' + chanName(S.voice.ch) : 'Çevrimiçi'
+  const state = S.srvMuted.has(S.id) ? 'Yönetici seni susturdu' : isAdmin() ? 'Yönetici' : S.voice ? 'Ses: ' + chanName(S.voice.ch) : 'Çevrimiçi'
   const av = $('#meAvatar')
   av.style.setProperty('--h', hueOf(S.name))
   av.textContent = initial(S.name)
+  $('#meBtn').title = S.name + ' · ' + state
+  $('#profName').textContent = S.name
+  $('#profState').textContent = state
+  const pav = $('#profAvatar')
+  pav.style.setProperty('--h', hueOf(S.name))
+  pav.textContent = initial(S.name)
   const mic = $('#micBtn')
   mic.innerHTML = ico(muted ? 'micOff' : 'mic')
   mic.setAttribute('aria-pressed', String(muted))
@@ -1637,7 +1642,6 @@ function restartTest() {
 async function openSettings() {
   const s = S.settings
   draft = { sounds: s.sounds, mic: s.mic, micVol: s.micVol, outVol: s.outVol, ns: s.ns, gate: s.gate, thresh: s.thresh }
-  $('#setAccount').textContent = S.name + (isAdmin() ? ' (yönetici)' : '')
   $('#invField').hidden = !isAdmin()
   syncAudioControls()
   await fillMics()
@@ -2118,7 +2122,7 @@ function wire() {
 
   // kullanıcı adı değiştirme
   $('#renameBtn').addEventListener('click', () => {
-    $('#settingsDlg').close()
+    $('#profileDlg').close()
     $('#renameErr').hidden = true
     $('#renameInput').value = S.name
     $('#renamePass').value = ''
@@ -2227,7 +2231,9 @@ function wire() {
   $('#deafBtn').addEventListener('click', toggleDeaf)
   $('#leaveVoice').addEventListener('click', () => leaveVoice())
   $('#settingsBtn').addEventListener('click', openSettings)
-  $('#meBtn').addEventListener('click', openSettings)
+  $('#meBtn').addEventListener('click', () => { renderMe(); $('#profileDlg').showModal() })
+  $('#profClose').addEventListener('click', () => $('#profileDlg').close())
+  $('#profLogout').addEventListener('click', logout)
   $('#menuBtn').addEventListener('click', openSide)
   $('#closeSide').addEventListener('click', closeDrawers)
   $('#membersBtn').addEventListener('click', openMembers)
