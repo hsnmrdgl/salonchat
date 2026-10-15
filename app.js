@@ -1548,6 +1548,7 @@ function renderMe() {
   const state = S.srvMuted.has(S.id) ? 'Yönetici seni susturdu' : isAdmin() ? 'Yönetici' : S.voice ? 'Ses: ' + chanName(S.voice.ch) : 'Çevrimiçi'
   const av = $('#meAvatar')
   paintAvatar(av, S.name)
+  $('#meName').textContent = S.name
   $('#meBtn').title = S.name + ' · ' + state
   $('#profName').textContent = S.name
   $('#profState').textContent = state
