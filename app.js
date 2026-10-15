@@ -1523,8 +1523,9 @@ function renderMembers() {
     ul.append(h('li', {}, h('button', { class: 'member', onclick: () => openUser(p.id) },
       avatar(p.name, null),
       h('span', { class: 'meta' },
-        h('strong', {}, p.name, S.adminIds.has(p.id) ? [' ', h('span', { class: 'badge', text: 'Yönetici' })] : null),
-        h('small', { text: p.ch ? 'Sesli: ' + chanName(p.ch) + (p.share ? ' · Ekran paylaşıyor' : '') : 'Çevrimiçi' })))))
+        h('strong', {}, h('i', { class: 'dot on' }), p.name),
+        S.adminIds.has(p.id) ? h('span', { class: 'm-tag' }, h('span', { class: 'badge', text: 'Yönetici' })) : null,
+        p.ch ? h('small', { text: 'Sesli: ' + chanName(p.ch) + (p.share ? ' · Ekran paylaşıyor' : '') }) : null))))
   }
 
   // Kayıtlı ama şu an bağlı olmayan hesaplar (hesap dizininden) kalıcı olarak çevrimdışı görünür
@@ -1538,8 +1539,8 @@ function renderMembers() {
     ul.append(h('li', {}, h('div', { class: 'member off' },
       avatar(e.name, null),
       h('span', { class: 'meta' },
-        h('strong', {}, e.name, e.admin ? [' ', h('span', { class: 'badge', text: 'Yönetici' })] : null),
-        h('small', { text: 'Çevrimdışı' })))))
+        h('strong', {}, h('i', { class: 'dot' }), e.name),
+        e.admin ? h('span', { class: 'm-tag' }, h('span', { class: 'badge', text: 'Yönetici' })) : null))))
   }
 }
 
