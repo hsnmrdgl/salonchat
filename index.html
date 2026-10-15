@@ -107,11 +107,10 @@
     </div>
 
     <footer class="me">
-      <button id="meBtn" class="me-id" aria-label="Profil menüsünü aç" title="Profil">
+      <button id="meBtn" class="me-id" aria-haspopup="menu" aria-expanded="false" aria-label="Durum seç" title="Durum seç">
         <span id="meAvatar" class="avatar ring st-online" data-uid="me"></span>
         <span id="meName" class="me-name"></span>
       </button>
-      <button id="statusBtn" type="button" class="icon-btn status-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Durum" title="Durum"><i id="statusDot" class="sdot online"></i><span class="caret" aria-hidden="true"></span></button>
       <button id="settingsBtn" class="icon-btn" aria-label="Ayarlar" data-icon="sliders"></button>
       <div id="statusMenu" class="status-menu" role="menu" aria-label="Durum seç" hidden></div>
     </footer>
@@ -206,33 +205,6 @@
   </form>
 </dialog>
 
-<!-- Profil menüsü -->
-<dialog id="profileDlg" class="dlg">
-  <div>
-    <header class="dlg-head">
-      <span id="profAvatar" class="avatar big"></span>
-      <div>
-        <h3 id="profName"></h3>
-        <p id="profState" class="muted"></p>
-      </div>
-      <button type="button" id="profClose" class="icon-btn" aria-label="Kapat" data-icon="x"></button>
-    </header>
-    <div class="row">
-      <button type="button" id="avatarBtn" class="btn">Fotoğraf yükle</button>
-      <button type="button" id="avatarDel" class="btn" hidden>Fotoğrafı kaldır</button>
-      <input type="file" id="avatarInput" accept="image/*" hidden>
-    </div>
-    <p class="hint">Fotoğraf otomatik olarak kare kırpılır ve küçültülür.</p>
-    <div class="row">
-      <button type="button" id="renameBtn" class="btn">Kullanıcı adını değiştir</button>
-      <button type="button" id="passBtn" class="btn">Şifreyi değiştir</button>
-    </div>
-    <div class="row end">
-      <button type="button" id="profLogout" class="btn danger">Çıkış yap</button>
-    </div>
-  </div>
-</dialog>
-
 <!-- Ayarlar -->
 <dialog id="settingsDlg" class="dlg">
   <form method="dialog" id="settingsForm">
@@ -241,14 +213,38 @@
       <button class="icon-btn" value="close" aria-label="Kapat" data-icon="x"></button>
     </header>
 
-    <div class="field" id="invField" hidden>
-      <label>Davet kodları</label>
-      <p class="muted">Yeni kullanıcılar bu kodlarla sunucuya katılır.</p>
-      <div class="row">
-        <button type="button" id="invOpen" class="btn">Davet kodlarını yönet</button>
-      </div>
-    </div>
+    <nav class="tabs stabs" id="settingsTabs" role="tablist" aria-label="Ayar kategorileri">
+      <button type="button" role="tab" data-tab="account" aria-selected="true">Hesap</button>
+      <button type="button" role="tab" data-tab="audio" aria-selected="false">Ses</button>
+      <button type="button" role="tab" id="tabAdmin" data-tab="admin" aria-selected="false" hidden>Yönetici</button>
+    </nav>
 
+    <!-- Hesap -->
+    <section data-panel="account">
+      <div class="acct-head">
+        <span id="profAvatar" class="avatar xl"></span>
+        <div class="acct-meta">
+          <h4 id="profName"></h4>
+          <p id="profState" class="muted"></p>
+        </div>
+      </div>
+      <div class="row">
+        <button type="button" id="avatarBtn" class="btn">Fotoğraf yükle</button>
+        <button type="button" id="avatarDel" class="btn" hidden>Fotoğrafı kaldır</button>
+        <input type="file" id="avatarInput" accept="image/*" hidden>
+      </div>
+      <p class="hint">Fotoğraf otomatik olarak kare kırpılır ve küçültülür.</p>
+      <div class="row">
+        <button type="button" id="renameBtn" class="btn">Kullanıcı adını değiştir</button>
+        <button type="button" id="passBtn" class="btn">Şifreyi değiştir</button>
+      </div>
+      <div class="admin-actions">
+        <button type="button" id="profLogout" class="btn danger">Çıkış yap</button>
+      </div>
+    </section>
+
+    <!-- Ses -->
+    <section data-panel="audio" hidden>
     <div class="field">
       <label for="setMic">Mikrofon</label>
       <select id="setMic"><option value="">Varsayılan</option></select>
@@ -295,10 +291,21 @@
       <label for="setSounds">Katılma ve ayrılma sesleri</label>
     </div>
 
-    <div class="row end">
-      <button type="button" id="logoutBtn" class="btn danger">Çıkış yap</button>
+    <div class="row save">
       <button class="btn primary" value="save" id="saveSettings">Kaydet</button>
     </div>
+    </section>
+
+    <!-- Yönetici -->
+    <section data-panel="admin" hidden>
+      <div class="field">
+        <label>Davet kodları</label>
+        <p class="muted">Yeni kullanıcılar bu kodlarla sunucuya katılır.</p>
+        <div class="row">
+          <button type="button" id="invOpen" class="btn">Davet kodlarını yönet</button>
+        </div>
+      </div>
+    </section>
   </form>
 </dialog>
 
