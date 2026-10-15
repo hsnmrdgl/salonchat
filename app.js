@@ -1680,9 +1680,17 @@ function saveSettings() {
 
 // Oturumu açık kullanıcı adını değiştirir. Diğer kişiler yeni adı hesap dizininden doğrular;
 // dizin yenilenene kadar presence mesajı onPresence içinde birkaç saniye bekletilir.
-async function renameAccount(newName, password) {
-  const res = await rpc('salon_rename', { p_new: newName, p_password: password })
-  if (!res?.ok) throw new AuthError(ERR[res?.error] || 'İşlem başarısız oldu.')
+// Şifre sorulmaz; 3 ayda 1 kez sınırını sunucu uygular (rename_cooldown).
+async function renameAccount(newName) {
+  const res = await rpc('salon_rename', { p_new: newName })
+  if (!res?.ok) {
+    if (res?.error === 'rename_cooldown') {
+      const d = res.next ? new Date(res.next) : null
+      const when = d && !isNaN(d) ? ' Bir sonraki değiştirme tarihi: ' + d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }) + '.' : ''
+      throw new AuthError('Kullanıcı adını 3 ayda yalnızca 1 kez değiştirebilirsin.' + when)
+    }
+    throw new AuthError(ERR[res?.error] || 'İşlem başarısız oldu.')
+  }
   S.name = normName(res.me.username)
   S.key = keyName(S.name)
   LS.set('name', S.name)
@@ -1690,6 +1698,14 @@ async function renameAccount(newName, password) {
   dirAt = 0
   await refreshDir()
   renderAll()
+}
+
+// Oturumu açık kullanıcı şifresini değiştirir (mevcut şifre doğrulanır)
+async function changePassword(oldPass, newPass) {
+  const res = await rpc('salon_change_password', { p_old: oldPass, p_new: newPass })
+  if (res?.ok) return
+  if (res?.error === 'bad_credentials') throw new AuthError('Mevcut şifre yanlış.')
+  throw new AuthError(ERR[res?.error] || 'İşlem başarısız oldu.')
 }
 
 // Giriş yapmamış kullanıcı, yöneticinin verdiği kodla yeni şifre belirler
@@ -2125,7 +2141,6 @@ function wire() {
     $('#profileDlg').close()
     $('#renameErr').hidden = true
     $('#renameInput').value = S.name
-    $('#renamePass').value = ''
     $('#renameDlg').showModal()
   })
   $('#renameCancel').addEventListener('click', () => $('#renameDlg').close())
@@ -2135,17 +2150,48 @@ function wire() {
     const fail = msg => { err.hidden = false; err.textContent = msg }
     err.hidden = true
     const name = normName($('#renameInput').value)
-    const pass = $('#renamePass').value
     if (name === S.name) return fail('Bu zaten şu anki kullanıcı adın.')
     if (!validNewName(name)) return fail(NEW_NAME_RULE)
-    if (!pass) return fail('Onay için şifreni yaz.')
     const btn = $('#renameSubmit')
     btn.disabled = true
     try {
-      await renameAccount(name, pass)
+      await renameAccount(name)
       $('#renameDlg').close()
-      $('#renamePass').value = ''
       toast('Kullanıcı adın değişti.')
+    } catch (x) {
+      console.warn(x)
+      fail(x instanceof AuthError ? x.message : 'İşlem başarısız oldu.')
+    } finally {
+      btn.disabled = false
+    }
+  })
+
+  // şifre değiştirme
+  $('#passBtn').addEventListener('click', () => {
+    $('#profileDlg').close()
+    $('#passForm').reset()
+    $('#passErr').hidden = true
+    $('#passDlg').showModal()
+  })
+  $('#passCancel').addEventListener('click', () => $('#passDlg').close())
+  $('#passForm').addEventListener('submit', async e => {
+    e.preventDefault()
+    const err = $('#passErr')
+    const fail = msg => { err.hidden = false; err.textContent = msg }
+    err.hidden = true
+    const oldPass = $('#passOld').value
+    const newPass = $('#passNew').value
+    if (!oldPass) return fail('Mevcut şifreni yaz.')
+    if (newPass.length < 6 || newPass.length > 72) return fail(ERR.weak_password)
+    if (newPass === oldPass) return fail('Yeni şifre mevcut şifreyle aynı olamaz.')
+    if (newPass !== $('#passNew2').value) return fail('Yeni şifreler aynı değil.')
+    const btn = $('#passSubmit')
+    btn.disabled = true
+    try {
+      await changePassword(oldPass, newPass)
+      $('#passDlg').close()
+      $('#passForm').reset()
+      toast('Şifren değişti.')
     } catch (x) {
       console.warn(x)
       fail(x instanceof AuthError ? x.message : 'İşlem başarısız oldu.')
