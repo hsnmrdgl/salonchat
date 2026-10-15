@@ -101,9 +101,8 @@
     </div>
 
     <footer class="me">
-      <button id="meBtn" class="me-id" aria-label="Ayarları aç">
+      <button id="meBtn" class="me-id" aria-label="Profil menüsünü aç" title="Profil">
         <span id="meAvatar" class="avatar" data-uid="me"></span>
-        <span class="me-text"><strong id="meName"></strong><small id="meState">Çevrimiçi</small></span>
       </button>
       <button id="micBtn" class="icon-btn" aria-label="Mikrofonu kapat" aria-pressed="false" data-icon="mic"></button>
       <button id="deafBtn" class="icon-btn" aria-label="Sesi kapat" aria-pressed="false" data-icon="headphones"></button>
@@ -200,6 +199,26 @@
   </form>
 </dialog>
 
+<!-- Profil menüsü -->
+<dialog id="profileDlg" class="dlg">
+  <div>
+    <header class="dlg-head">
+      <span id="profAvatar" class="avatar big"></span>
+      <div>
+        <h3 id="profName"></h3>
+        <p id="profState" class="muted"></p>
+      </div>
+      <button type="button" id="profClose" class="icon-btn" aria-label="Kapat" data-icon="x"></button>
+    </header>
+    <div class="row">
+      <button type="button" id="renameBtn" class="btn">Kullanıcı adını değiştir</button>
+    </div>
+    <div class="row end">
+      <button type="button" id="profLogout" class="btn danger">Çıkış yap</button>
+    </div>
+  </div>
+</dialog>
+
 <!-- Ayarlar -->
 <dialog id="settingsDlg" class="dlg">
   <form method="dialog" id="settingsForm">
@@ -207,14 +226,6 @@
       <h3>Ayarlar</h3>
       <button class="icon-btn" value="close" aria-label="Kapat" data-icon="x"></button>
     </header>
-
-    <div class="field">
-      <label>Hesap</label>
-      <p id="setAccount" class="muted"></p>
-      <div class="row">
-        <button type="button" id="renameBtn" class="btn">Kullanıcı adını değiştir</button>
-      </div>
-    </div>
 
     <div class="field" id="invField" hidden>
       <label>Davet kodları</label>
