@@ -184,7 +184,7 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .vb-text span { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .me { display: flex; align-items: center; gap: 2px; padding: 10px 8px; background: #130f20; border-top: 1px solid var(--line); }
-.me-id { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; padding: 4px 6px; border: 0; background: transparent; border-radius: 9px; text-align: left; }
+.me-id { display: flex; align-items: center; flex: none; margin-right: auto; padding: 4px; border: 0; background: transparent; border-radius: 50%; }
 .me-id:hover { background: var(--surface); }
 .me-text { display: flex; flex-direction: column; min-width: 0; }
 .me-text strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
