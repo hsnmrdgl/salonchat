@@ -280,8 +280,10 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .member .meta { display: flex; flex-direction: column; min-width: 0; }
 .member .meta strong { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .member .meta small { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.member .dot { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: var(--faint); vertical-align: 1px; }
-.member .dot.on { background: var(--ok); }
+/* Durum halkası: yeşil = çevrimiçi, gri = çevrimdışı. Konuşurken halka sarıya döner ve kalınlaşır. */
+.avatar.ring { outline: 2px solid var(--faint); outline-offset: 2px; }
+.avatar.ring.on { outline-color: var(--ok); }
+.avatar.ring.speaking { box-shadow: none; outline-color: var(--talk); outline-width: calc(2px + var(--lvl) * 3px); }
 .member .m-tag { margin-top: 2px; }
 .member.off { opacity: .5; cursor: default; }
 .member.off:hover { background: transparent; }
