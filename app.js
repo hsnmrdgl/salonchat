@@ -235,7 +235,7 @@ function applyDir(list) {
   const m = new Map()
   for (const e of Array.isArray(list) ? list : []) {
     const name = normName(str(e?.u, 40))
-    if (validName(name) && isHex(e?.k, 64)) m.set(keyName(name), { name, pk: e.k, admin: e.a === true, v: Number(e.v) > 0 ? Number(e.v) : 0 })
+    if (validName(name) && isHex(e?.k, 64)) m.set(keyName(name), { name, pk: e.k, admin: e.a === true, v: Number(e.v) > 0 ? Number(e.v) : 0, created: Number(e.c) > 0 ? Number(e.c) : 0 })
   }
   S.dir = m
   dirAt = Date.now()
@@ -1547,7 +1547,7 @@ function renderMembers() {
   if (!offline.length) return
   ul.append(h('li', { class: 'm-sec', text: 'Çevrimdışı (' + offline.length + ')' }))
   for (const e of offline) {
-    ul.append(h('li', {}, h('div', { class: 'member off', title: 'Çevrimdışı' },
+    ul.append(h('li', {}, h('button', { class: 'member off', title: 'Çevrimdışı', onclick: () => openUser('', e) },
       avatar(e.name, null, 'ring'),
       h('span', { class: 'meta' },
         h('strong', {}, e.name),
@@ -1673,16 +1673,21 @@ function toggleStatusMenu(force) {
 }
 
 let userDlgId = null
-function openUser(id) {
-  const p = roster().find(x => x.id === id)
+// Çevrimdışı hesaplar için id boş, ikinci parametre hesap dizinindeki kayıttır
+function openUser(id, offline) {
+  const p = offline ? { id: '', name: offline.name, ch: null, offline: true, admin: offline.admin } : roster().find(x => x.id === id)
   if (!p) return
   userDlgId = id
   const dlg = $('#userDlg')
   const av = $('#udAvatar')
   paintAvatar(av, p.name)
   av.dataset.uid = p.self ? 'me' : id
-  $('#udName').textContent = p.name + (S.adminIds.has(id) ? ' (yönetici)' : '')
-  $('#udInfo').textContent = p.ch ? 'Ses kanalında: ' + chanName(p.ch) : 'Çevrimiçi'
+  $('#udName').textContent = p.name + ((p.offline ? p.admin : S.adminIds.has(id)) ? ' (yönetici)' : '')
+  $('#udInfo').textContent = p.offline ? 'Çevrimdışı' : p.ch ? 'Ses kanalında: ' + chanName(p.ch) : statusOf(p.status).label
+  const created = S.dir.get(keyName(p.name))?.created
+  const joined = $('#udJoined')
+  joined.hidden = !created
+  if (created) joined.textContent = 'Kayıt tarihi: ' + new Date(created).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
 
   const canVol = !p.self && S.voice && p.ch === S.voice.ch
   $('#udVolume').hidden = !canVol
@@ -1692,7 +1697,7 @@ function openUser(id) {
     $('#udVolOut').textContent = v + '%'
     paintLocalMute(p.name)
   }
-  const adm = isAdmin() && !p.self
+  const adm = isAdmin() && !p.self && !p.offline
   $('#udAdmin').hidden = !adm
   if (adm) {
     $('#udMute').textContent = S.srvMuted.has(id) ? 'Susturmayı kaldır' : 'Sustur'
