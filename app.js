@@ -1562,10 +1562,7 @@ function renderMe() {
   paintAvatar(av, S.name)
   $('#meName').textContent = S.name
   for (const s of STATUSES) av.classList.toggle('st-' + s.id, s.id === S.me.status)
-  $('#statusDot').className = 'sdot ' + S.me.status
-  const sBtn = $('#statusBtn')
-  sBtn.title = 'Durum: ' + statusOf(S.me.status).label
-  sBtn.setAttribute('aria-label', sBtn.title)
+  $('#meBtn').setAttribute('aria-label', 'Durum seç, şu an: ' + statusOf(S.me.status).label)
   $('#meBtn').title = S.name + ' · ' + state
   $('#profName').textContent = S.name
   $('#profState').textContent = state
@@ -1668,7 +1665,7 @@ function toggleStatusMenu(force) {
   const m = $('#statusMenu')
   const open = force ?? m.hidden
   m.hidden = !open
-  $('#statusBtn').setAttribute('aria-expanded', String(open))
+  $('#meBtn').setAttribute('aria-expanded', String(open))
   if (open) renderStatusMenu()
 }
 
@@ -1785,10 +1782,22 @@ function restartTest() {
   startTest()
 }
 
+// Ayarlar kategorileri: hesap, ses, yönetici (yalnızca yöneticilere görünür)
+let settingsTab = 'account'
+function showSettingsTab(t) {
+  if (t === 'admin' && !isAdmin()) t = 'account'
+  settingsTab = t
+  for (const b of document.querySelectorAll('#settingsTabs [data-tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === t))
+  for (const p of document.querySelectorAll('#settingsDlg [data-panel]')) p.hidden = p.dataset.panel !== t
+  if (t !== 'audio') stopTest() // mikrofon testi yalnızca ses sekmesindeyken sürer
+}
+
 async function openSettings() {
   const s = S.settings
   draft = { sounds: s.sounds, mic: s.mic, micVol: s.micVol, outVol: s.outVol, ns: s.ns, gate: s.gate, thresh: s.thresh }
-  $('#invField').hidden = !isAdmin()
+  $('#tabAdmin').hidden = !isAdmin()
+  showSettingsTab(settingsTab)
+  renderMe()
   syncAudioControls()
   await fillMics()
   $('#settingsDlg').showModal()
@@ -2292,7 +2301,7 @@ function wire() {
 
   // kullanıcı adı değiştirme
   $('#renameBtn').addEventListener('click', () => {
-    $('#profileDlg').close()
+    $('#settingsDlg').close()
     $('#renameErr').hidden = true
     $('#renameInput').value = S.name
     $('#renameDlg').showModal()
@@ -2322,7 +2331,7 @@ function wire() {
 
   // şifre değiştirme
   $('#passBtn').addEventListener('click', () => {
-    $('#profileDlg').close()
+    $('#settingsDlg').close()
     $('#passForm').reset()
     $('#passErr').hidden = true
     $('#passDlg').showModal()
@@ -2431,8 +2440,7 @@ function wire() {
   $('#deafBtn').addEventListener('click', toggleDeaf)
   $('#leaveVoice').addEventListener('click', () => leaveVoice())
   $('#settingsBtn').addEventListener('click', openSettings)
-  $('#meBtn').addEventListener('click', () => { renderMe(); $('#profileDlg').showModal() })
-  $('#profClose').addEventListener('click', () => $('#profileDlg').close())
+  $('#meBtn').addEventListener('click', () => toggleStatusMenu())
   $('#profLogout').addEventListener('click', logout)
 
   // profil fotoğrafı
@@ -2464,10 +2472,10 @@ function wire() {
   $('#closeMembers').addEventListener('click', closeDrawers)
   $('#scrim').addEventListener('click', closeDrawers)
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeDrawers(); toggleStatusMenu(false) } })
-  $('#statusBtn').addEventListener('click', () => toggleStatusMenu())
-  document.addEventListener('click', e => { if (!e.target.closest('#statusMenu, #statusBtn')) toggleStatusMenu(false) })
+  document.addEventListener('click', e => { if (!e.target.closest('#statusMenu, #meBtn')) toggleStatusMenu(false) })
 
   $('#saveSettings').addEventListener('click', saveSettings)
+  for (const b of document.querySelectorAll('#settingsTabs [data-tab]')) b.addEventListener('click', () => showSettingsTab(b.dataset.tab))
 
   // ses ayarları: değişiklikler önce taslağa yazılır, test ve hoparlör seviyesi canlı dinlenebilir
   $('#setMic').addEventListener('change', e => { draft.mic = e.target.value; if (test) restartTest() })
@@ -2494,7 +2502,6 @@ function wire() {
     setOutVol(S.settings.outVol) // kaydedilmeyen hoparlör seviyesi geri alınır
     draft = null
   })
-  $('#logoutBtn').addEventListener('click', logout)
 
   // davet kodu ekranı (üye olmayan hesap)
   $('#inviteForm').addEventListener('submit', e => {
