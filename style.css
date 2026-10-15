@@ -184,8 +184,11 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .vb-text span { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .me { display: flex; align-items: center; gap: 2px; padding: 10px 8px; background: #130f20; border-top: 1px solid var(--line); }
-.me-id { display: flex; align-items: center; flex: none; margin-right: auto; padding: 4px; border: 0; background: transparent; border-radius: 50%; }
+.me-id { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 4px 8px 4px 4px; border: 0; background: transparent; border-radius: 10px; text-align: left; }
 .me-id:hover { background: var(--surface); }
+.me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 14px; }
+.controls { display: flex; gap: 4px; margin: 0 8px 8px; padding: 4px; border-radius: var(--r); background: var(--surface); border: 1px solid var(--line); }
+.controls .icon-btn { flex: 1; width: auto; }
 .me-text { display: flex; flex-direction: column; min-width: 0; }
 .me-text strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .me-text small { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
