@@ -212,6 +212,7 @@
     </header>
     <div class="row">
       <button type="button" id="renameBtn" class="btn">Kullanıcı adını değiştir</button>
+      <button type="button" id="passBtn" class="btn">Şifreyi değiştir</button>
     </div>
     <div class="row end">
       <button type="button" id="profLogout" class="btn danger">Çıkış yap</button>
@@ -317,17 +318,42 @@
       <label for="renameInput">Yeni kullanıcı adı</label>
       <input id="renameInput" maxlength="20" minlength="6" required autocapitalize="off" spellcheck="false">
       <p class="hint">6-20 karakter. Harf (Türkçe dahil), rakam, boşluk, nokta, tire ve alt çizgi kullanılabilir.</p>
+      <p class="warn">Kullanıcı adını 3 ayda yalnızca 1 kez değiştirebilirsin.</p>
     </div>
-    <div class="field">
-      <label for="renamePass">Şifren</label>
-      <input id="renamePass" type="password" required autocomplete="current-password">
-      <p class="hint">Onay için mevcut şifreni yaz.</p>
-    </div>
-    <p id="renameErr" class="error" role="alert" hidden></p>
+<p id="renameErr" class="error" role="alert" hidden></p>
 
     <div class="row end">
       <button type="button" id="renameCancel" class="btn">Vazgeç</button>
       <button type="submit" id="renameSubmit" class="btn primary">Değiştir</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Şifre değiştirme -->
+<dialog id="passDlg" class="dlg">
+  <form id="passForm" autocomplete="off">
+    <header class="dlg-head">
+      <h3>Şifreyi değiştir</h3>
+      <button class="icon-btn" aria-label="Kapat" data-icon="x"></button>
+    </header>
+
+    <div class="field">
+      <label for="passOld">Mevcut şifre</label>
+      <input id="passOld" type="password" required autocomplete="current-password">
+    </div>
+    <div class="field">
+      <label for="passNew">Yeni şifre</label>
+      <input id="passNew" type="password" required minlength="6" maxlength="72" placeholder="En az 6 karakter" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label for="passNew2">Yeni şifre tekrar</label>
+      <input id="passNew2" type="password" required maxlength="72" autocomplete="new-password">
+    </div>
+    <p id="passErr" class="error" role="alert" hidden></p>
+
+    <div class="row end">
+      <button type="button" id="passCancel" class="btn">Vazgeç</button>
+      <button type="submit" id="passSubmit" class="btn primary">Şifreyi değiştir</button>
     </div>
   </form>
 </dialog>
