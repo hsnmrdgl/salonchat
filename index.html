@@ -100,13 +100,17 @@
       <p id="shareInfo" class="vb-share" hidden></p>
     </div>
 
-    <footer class="me">
-      <button id="meBtn" class="me-id" aria-label="Profil menüsünü aç" title="Profil">
-        <span id="meAvatar" class="avatar" data-uid="me"></span>
-      </button>
+    <div class="controls">
       <button id="micBtn" class="icon-btn" aria-label="Mikrofonu kapat" aria-pressed="false" data-icon="mic"></button>
       <button id="deafBtn" class="icon-btn" aria-label="Sesi kapat" aria-pressed="false" data-icon="headphones"></button>
       <button id="shareBtn" type="button" class="icon-btn" aria-label="Ekran paylaş" aria-pressed="false" title="Ekran paylaş" data-icon="screen" disabled></button>
+    </div>
+
+    <footer class="me">
+      <button id="meBtn" class="me-id" aria-label="Profil menüsünü aç" title="Profil">
+        <span id="meAvatar" class="avatar" data-uid="me"></span>
+        <span id="meName" class="me-name"></span>
+      </button>
       <button id="settingsBtn" class="icon-btn" aria-label="Ayarlar" data-icon="sliders"></button>
     </footer>
   </aside>
