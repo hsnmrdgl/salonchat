@@ -1521,9 +1521,9 @@ function renderMembers() {
   for (const p of people) {
     // data-uid verilmez: konuşma halkası burada değil, yalnızca soldaki kanal listesinde görünür
     ul.append(h('li', {}, h('button', { class: 'member', onclick: () => openUser(p.id) },
-      avatar(p.name, null),
+      avatar(p.name, null, 'ring on'),
       h('span', { class: 'meta' },
-        h('strong', {}, h('i', { class: 'dot on' }), p.name),
+        h('strong', {}, p.name),
         S.adminIds.has(p.id) ? h('span', { class: 'm-tag' }, h('span', { class: 'badge', text: 'Yönetici' })) : null,
         p.ch ? h('small', { text: 'Sesli: ' + chanName(p.ch) + (p.share ? ' · Ekran paylaşıyor' : '') }) : null))))
   }
@@ -1537,9 +1537,9 @@ function renderMembers() {
   ul.append(h('li', { class: 'm-sec', text: 'Çevrimdışı (' + offline.length + ')' }))
   for (const e of offline) {
     ul.append(h('li', {}, h('div', { class: 'member off' },
-      avatar(e.name, null),
+      avatar(e.name, null, 'ring'),
       h('span', { class: 'meta' },
-        h('strong', {}, h('i', { class: 'dot' }), e.name),
+        h('strong', {}, e.name),
         e.admin ? h('span', { class: 'm-tag' }, h('span', { class: 'badge', text: 'Yönetici' })) : null))))
   }
 }
