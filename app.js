@@ -80,7 +80,7 @@ const adminOnly = new Set(allChannels.filter(c => c.adminOnly).map(c => c.id)) /
 const RETENTION = 7 * 24 * 3600e3 // mesajlar en fazla 1 hafta saklanır (sunucu da 7 günden eskiyi siler)
 const IMG_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']) // SVG bilerek yok: içinde kod olabilir
 
-// Kullanıcının seçebildiği durumlar. Renkler style.css'te (.sdot ve .ring.st-*).
+// Kullanıcının seçebildiği durumlar. Renkler ve avatar rozetleri style.css'te (.sdot ve .avatar.st-*).
 // Durum yalnızca görünümdür: sesi ya da bildirimleri etkilemez, presence ile diğerlerine duyurulur.
 const STATUSES = [
   { id: 'online', label: 'Çevrimiçi' },
@@ -1573,8 +1573,9 @@ function renderMembers() {
   ul.textContent = ''
   for (const p of people) {
     // data-uid verilmez: konuşma halkası burada değil, yalnızca soldaki kanal listesinde görünür
-    ul.append(h('li', {}, h('button', { class: 'member', title: statusOf(p.status).label, onclick: () => openUser(p.id) },
-      avatar(p.name, null, 'ring st-' + statusId(p.status)),
+    const st = statusId(p.status)
+    ul.append(h('li', {}, h('button', { class: 'member st-' + st, title: statusOf(st).label, onclick: () => openUser(p.id) },
+      avatar(p.name, null, 'st-' + st), // dışarıda ve meşgulde avatarın köşesinde küçük rozet çıkar (style.css)
       h('span', { class: 'meta' },
         h('strong', {}, p.name),
         S.adminIds.has(p.id) ? h('span', { class: 'm-tag' }, h('span', { class: 'badge', text: 'Yönetici' })) : null,
@@ -1590,7 +1591,7 @@ function renderMembers() {
   ul.append(h('li', { class: 'm-sec', text: 'Çevrimdışı (' + offline.length + ')' }))
   for (const e of offline) {
     ul.append(h('li', {}, h('button', { class: 'member off', title: 'Çevrimdışı', onclick: () => openUser('', e) },
-      avatar(e.name, null, 'ring'),
+      avatar(e.name, null),
       h('span', { class: 'meta' },
         h('strong', {}, e.name),
         e.admin ? h('span', { class: 'm-tag' }, h('span', { class: 'badge', text: 'Yönetici' })) : null))))
