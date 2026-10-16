@@ -1579,7 +1579,7 @@ function renderMembers() {
       h('span', { class: 'meta' },
         h('strong', {}, p.name),
         S.adminIds.has(p.id) ? h('span', { class: 'm-tag' }, h('span', { class: 'badge', text: 'Yönetici' })) : null,
-        p.ch ? h('small', { text: 'Sesli: ' + chanName(p.ch) + (p.share ? ' · Ekran paylaşıyor' : '') }) : null))))
+        p.share ? h('small', { text: 'Ekran paylaşıyor' }) : null))))
   }
 
   // Kayıtlı ama şu an bağlı olmayan hesaplar (hesap dizininden) kalıcı olarak çevrimdışı görünür
