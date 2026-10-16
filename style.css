@@ -385,4 +385,6 @@ input[type="range"] { padding: 0; accent-color: var(--accent); }
 .inv.used .code { color: var(--faint); text-decoration: line-through; }
 .inv .icon-btn { width: 32px; height: 32px; }
 .inv .icon-btn svg { width: 17px; height: 17px; }
+.rc-result { margin-top: 16px; }
+.rc-result .code { color: var(--talk); user-select: all; }
 #inviteCode { font: 700 18px/1 ui-monospace, Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; }
