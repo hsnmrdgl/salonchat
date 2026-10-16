@@ -285,9 +285,10 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .member .meta strong { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .member .meta small { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Durum halkası: yeşil = çevrimiçi, gri = çevrimdışı. Konuşurken halka sarıya döner ve kalınlaşır. */
-/* Durum rozeti: dışarıda = ay, meşgul = kırmızı yasak işareti. Avatarın sağ alt köşesinde, avatarın ~%38'i boyunda.
-   Çevrimiçi ve çevrimdışıda rozet yoktur. Rozetin arka planı panel rengidir (--badge-bg), böylece avatardan "oyulmuş" görünür. */
+/* Durum rozeti: çevrimiçi = yeşil nokta, dışarıda = ay, meşgul = kırmızı yasak işareti. Avatarın sağ alt köşesinde, avatarın ~%38'i boyunda.
+   Çevrimdışıda rozet yoktur. Rozetin arka planı panel rengidir (--badge-bg), böylece avatardan "oyulmuş" görünür. */
 .avatar { position: relative; --badge-bg: var(--side); }
+.avatar.st-online::after,
 .avatar.st-away::after,
 .avatar.st-busy::after {
   content: ""; position: absolute; right: -3px; bottom: -3px;
@@ -295,6 +296,7 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
   background: var(--badge-bg) center / 100% no-repeat;
   box-shadow: 0 0 0 2px var(--badge-bg);
 }
+.avatar.st-online::after { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%2358d6a4'/%3E%3C/svg%3E"); }
 .avatar.st-away::after { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffb020' d='M20.5 14.6A9 9 0 0 1 9.4 3.5a9 9 0 1 0 11.1 11.1z'/%3E%3C/svg%3E"); }
 .avatar.st-busy::after { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%23f04b5e'/%3E%3Crect x='6' y='10.2' width='12' height='3.6' rx='1.8' fill='%23fff'/%3E%3C/svg%3E"); }
 .me .avatar { --badge-bg: #130f20; }
