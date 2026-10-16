@@ -194,7 +194,8 @@ const ERR = {
   forbidden: 'Bu mesajı silme yetkin yok.',
   invalid_image: 'Görsel geçersiz ya da çok büyük (en fazla yaklaşık 1 MB). JPEG, PNG, GIF ve WebP desteklenir.',
   invalid_avatar: 'Fotoğraf geçersiz ya da çok büyük.',
-  avatar_rate: 'Fotoğrafı çok sık değiştirdin, biraz bekle.'
+  avatar_rate: 'Fotoğrafı çok sık değiştirdin, biraz bekle.',
+  user_not_found: 'Bu adda bir kullanıcı bulunamadı.'
 }
 
 async function loadLibs() {
@@ -606,6 +607,46 @@ function keepBottom() {
   if (box.dataset.stuck === '1') box.scrollTop = box.scrollHeight
 }
 
+// GIF'ler yüklenince 5 sn oynar, sonra o andaki karede durur; fare üzerine gelince yeniden oynar,
+// fare ayrılınca tekrar durur. Duran kare mesaj başına saklanır, mesaj listesi yeniden çizilse de GIF baştan oynamaz.
+const GIF_PLAY_MS = 5000
+const gifPosters = new Map() // mesaj id -> duran karenin data adresi
+
+function wireGif(im, id, url) {
+  let hover = false
+  let timer = 0
+  let started = false
+
+  const freeze = () => {
+    clearTimeout(timer)
+    if (hover) return
+    let poster = gifPosters.get(id)
+    if (!poster) {
+      try {
+        const c = document.createElement('canvas')
+        c.width = im.naturalWidth
+        c.height = im.naturalHeight
+        c.getContext('2d').drawImage(im, 0, 0)
+        poster = c.toDataURL('image/webp', 0.9)
+        gifPosters.set(id, poster)
+        while (gifPosters.size > 60) gifPosters.delete(gifPosters.keys().next().value)
+      } catch (e) { console.warn(e); return } // kare alınamazsa GIF oynamaya devam eder
+    }
+    im.src = poster
+  }
+  const play = () => { clearTimeout(timer); im.src = url }
+
+  im.addEventListener('pointerenter', e => { if (e.pointerType === 'touch') return; hover = true; if (im.src !== url) play() })
+  im.addEventListener('pointerleave', e => { if (e.pointerType === 'touch') return; hover = false; freeze() })
+  im.addEventListener('load', () => {
+    if (started || im.src !== url) return
+    started = true
+    timer = setTimeout(freeze, GIF_PLAY_MS) // ilk oynatma: yüklenince 5 sn
+  })
+
+  if (gifPosters.has(id)) im.src = gifPosters.get(id) // daha önce durmuş: duran kareyle başla
+}
+
 function chatImage(m) {
   const wrap = h('button', { type: 'button', class: 'chat-img', 'aria-label': 'Görseli büyüt' })
   const show = url => {
@@ -613,6 +654,7 @@ function chatImage(m) {
     wrap.textContent = ''
     const im = h('img', { src: url, alt: 'Gönderilen görsel' })
     im.addEventListener('load', keepBottom)
+    if (m.img === 'image/gif') wireGif(im, m.id, url)
     wrap.append(im)
   }
   wrap.addEventListener('click', () => { const u = S.imgs.get(m.id); if (u) openImage(u) })
@@ -1617,7 +1659,6 @@ function renderHeader() {
   const locked = adminOnly.has(S.view) && !isAdmin()
   $('#chIcon').innerHTML = ico('hash')
   $('#chTitle').textContent = chanName(S.view) || ''
-  $('#chSub').textContent = adminOnly.has(S.view) ? 'Duyuru kanalı, sadece yöneticiler yazabilir' : 'Metin kanalı'
   const input = $('#msgInput')
   input.disabled = locked
   input.placeholder = locked ? 'Bu kanala sadece yöneticiler yazabilir' : chanName(S.view) + ' kanalına yaz'
@@ -1901,9 +1942,10 @@ function updateNet() {
   const others = [...S.peers.values()].filter(p => p.ready).length
   let cls = ''
   let label = 'Bağlanıyor'
-  if (relays > 0) { cls = 'ok'; label = others ? 'Bağlı, ' + (others + 1) + ' kişi' : 'Bağlı, henüz kimse yok' }
+  if (relays > 0) { cls = 'ok'; label = others ? 'Bağlı, ' + (others + 1) + ' kişi' : '' }
   else if (Date.now() - bootTime > 15000) { cls = 'bad'; label = 'Röleye ulaşılamıyor' }
   el.className = 'net ' + cls
+  el.title = label || (cls === 'ok' ? 'Bağlı' : 'Bağlantı durumu')
   $('span', el).textContent = label
 }
 
@@ -2168,6 +2210,48 @@ function openInvites() {
   $('#settingsDlg').close()
   $('#invDlg').showModal()
   loadInvites()
+}
+
+/* ---- Şifre sıfırlama kodu (yönetici) ---- */
+
+function openResetCode() {
+  if (!isAdmin()) return
+  $('#settingsDlg').close()
+  $('#rcName').value = ''
+  $('#rcErr').hidden = true
+  $('#rcResult').hidden = true
+  $('#rcNames').replaceChildren(...[...S.dir.values()].map(e => h('option', { value: e.name })))
+  $('#rcDlg').showModal()
+  $('#rcName').focus()
+}
+
+let rcBusy = false
+async function makeResetCode(e) {
+  e.preventDefault()
+  if (rcBusy) return
+  const err = $('#rcErr')
+  err.hidden = true
+  $('#rcResult').hidden = true
+  const name = $('#rcName').value.trim()
+  if (!name) return
+  rcBusy = true
+  $('#rcSubmit').disabled = true
+  try {
+    const res = await adminRpc('salon_make_reset_code', { p_name: name })
+    const code = str(res.code, 12)
+    $('#rcCode').textContent = code
+    $('#rcFor').textContent = str(res.username, 40) + ' için · 1 saat geçerli'
+    $('#rcResult').hidden = false
+    const ok = await copyText(code)
+    toast(ok ? 'Kod oluşturuldu ve kopyalandı: ' + code : 'Kod oluşturuldu: ' + code)
+  } catch (x) {
+    console.warn(x)
+    err.hidden = false
+    err.textContent = x instanceof AuthError ? x.message : 'Kod oluşturulamadı.'
+  } finally {
+    rcBusy = false
+    $('#rcSubmit').disabled = false
+  }
 }
 
 let entering = false
@@ -2512,6 +2596,14 @@ function wire() {
 
   // davet kodları penceresi (yönetici)
   $('#invOpen').addEventListener('click', openInvites)
+  $('#rcOpen').addEventListener('click', openResetCode)
+  $('#rcForm').addEventListener('submit', makeResetCode)
+  $('#rcClose').addEventListener('click', () => $('#rcDlg').close())
+  $('#rcCancel').addEventListener('click', () => $('#rcDlg').close())
+  $('#rcCopy').addEventListener('click', async () => {
+    const ok = await copyText($('#rcCode').textContent)
+    toast(ok ? 'Kod kopyalandı.' : 'Kopyalanamadı, kodu elle seçip kopyala.', ok ? '' : 'err')
+  })
   $('#invNew').addEventListener('click', newInvite)
 
   $('#udVol').addEventListener('input', e => {
