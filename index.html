@@ -305,6 +305,13 @@
           <button type="button" id="invOpen" class="btn">Davet kodlarını yönet</button>
         </div>
       </div>
+      <div class="field">
+        <label>Şifre sıfırlama</label>
+        <p class="muted">Şifresini unutan kullanıcı için tek kullanımlık kod üret.</p>
+        <div class="row">
+          <button type="button" id="rcOpen" class="btn">Şifre sıfırlama kodu oluştur</button>
+        </div>
+      </div>
     </section>
   </form>
 </dialog>
@@ -324,6 +331,37 @@
     <p id="invEmpty" class="hint" hidden>Henüz davet kodu yok.</p>
     <p id="invErr" class="error" role="alert" hidden></p>
   </div>
+</dialog>
+
+<!-- Şifre sıfırlama kodu (yönetici) -->
+<dialog id="rcDlg" class="dlg">
+  <form id="rcForm" autocomplete="off">
+    <header class="dlg-head">
+      <h3>Şifre sıfırlama kodu</h3>
+      <button type="button" id="rcClose" class="icon-btn" aria-label="Kapat" data-icon="x"></button>
+    </header>
+    <p class="muted">Kod 1 saat geçerlidir ve bir kez kullanılır. Kişiye ilet; giriş ekranındaki "Şifremi unuttum" bağlantısından kullanıcı adı, kod ve yeni şifreyle girer.</p>
+
+    <div class="field">
+      <label for="rcName">Kullanıcı adı</label>
+      <input id="rcName" list="rcNames" maxlength="20" required autocapitalize="off" spellcheck="false">
+      <datalist id="rcNames"></datalist>
+    </div>
+    <p id="rcErr" class="error" role="alert" hidden></p>
+
+    <div id="rcResult" class="inv rc-result" hidden>
+      <div class="info">
+        <span id="rcCode" class="code"></span>
+        <small id="rcFor"></small>
+      </div>
+      <button type="button" id="rcCopy" class="icon-btn" aria-label="Kodu kopyala" title="Kodu kopyala" data-icon="copy"></button>
+    </div>
+
+    <div class="row end">
+      <button type="button" id="rcCancel" class="btn">Kapat</button>
+      <button type="submit" id="rcSubmit" class="btn primary">Kod oluştur</button>
+    </div>
+  </form>
 </dialog>
 
 <!-- Kullanıcı adı değiştirme -->
