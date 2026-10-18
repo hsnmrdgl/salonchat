@@ -875,6 +875,20 @@ function dayLabel(ts) {
   return new Date(ts).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long' })
 }
 
+// Kanal açılırken / ilk açılışta liste en alta sabitlenir. Düzen (yazı tipi, avatar, görsel) oturana kadar kısa süre
+// her karede en alta tekrar kaydırılır; kullanıcı yukarı kaydırırsa (stuck=0) bırakılır.
+let pinRaf = 0
+function pinBottom(ms = 1200) {
+  cancelAnimationFrame(pinRaf)
+  const end = performance.now() + ms
+  const tick = () => {
+    const box = $('#messages')
+    if (box.dataset.stuck === '1') box.scrollTop = box.scrollHeight
+    if (performance.now() < end) pinRaf = requestAnimationFrame(tick)
+  }
+  pinRaf = requestAnimationFrame(tick)
+}
+
 function renderMessages({ stick = false } = {}) {
   const box = $('#messages')
   const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 90
@@ -885,6 +899,7 @@ function renderMessages({ stick = false } = {}) {
   if (!list.length) {
     const readOnly = adminOnly.has(S.view) && !isAdmin()
     box.append(h('p', { class: 'empty', text: readOnly ? 'Burada henüz duyuru yok.' : 'Burada henüz mesaj yok. İlk mesajı sen yaz.' }))
+    box.dataset.stuck = '1'
     return
   }
   box.append(h('div', { class: 'spacer' }))
@@ -925,6 +940,7 @@ function renderMessages({ stick = false } = {}) {
   }
   box.dataset.stuck = (stick || nearBottom) ? '1' : '0'
   box.scrollTop = (stick || nearBottom) ? box.scrollHeight : oldTop
+  if (stick) pinBottom()
 }
 
 /* ------------------------------------------------------------------ */
@@ -1781,15 +1797,18 @@ function renderVoiceBar() {
   bar.hidden = !S.voice
   if (!S.voice) return
   const people = roster()
-  $('#vbTitle').textContent = chanName(S.voice.ch) + ' kanalına bağlandı'
+  $('#vbTitle').textContent = chanName(S.voice.ch) + ' bağlı'
 
   // ekran paylaşımı: paylaşan kendi yayınını önizler, diğerleri izler
   const sharer = people.find(p => p.ch === S.voice.ch && p.share && !p.self) || null
   const wb = $('#watchBtn')
-  wb.hidden = !S.share && !sharer
-  if (S.share) wb.textContent = 'Yayından çık'
+  // paylaşan kişi: "Yayına katıl" (kendi yayınını izler, zaten izliyorsa gizli) + "Yayından çık"; diğerleri: İzle
+  wb.hidden = S.share ? !!S.watch?.self : !sharer
+  const lb = $('#leaveShareBtn')
+  lb.hidden = !S.share
+  if (S.share) wb.textContent = 'Yayına katıl'
   else if (sharer) wb.textContent = S.watch?.id === sharer.id ? 'Yayını aç' : 'İzle: ' + sharer.name
-  $('#voiceBar .vb-actions').hidden = wb.hidden
+  $('#voiceBar .vb-actions').hidden = wb.hidden && lb.hidden
   const info = $('#shareInfo')
   info.hidden = !S.share
   if (S.share) {
@@ -2467,13 +2486,39 @@ function wire() {
 
   // giriş / kayıt sekmeleri
   let mode = 'login'
+  // Kayıt olurken yazdıkça alanın altında uygunluk durumu gösterilir
+  function hint(id, text, ok) {
+    const el = $(id)
+    el.hidden = !text
+    el.textContent = text
+    el.classList.toggle('ok', !!ok)
+    el.classList.toggle('bad', !ok)
+  }
+  function updateRegHints() {
+    if (mode !== 'register') return
+    const raw = normName($('#nameInput').value)
+    if (!raw) hint('#nameHint', '')
+    else if (raw.length < MIN_NEW_NAME) hint('#nameHint', 'Min. ' + MIN_NEW_NAME + ' karakter olmalı!', false)
+    else if (!validName(raw)) hint('#nameHint', 'Harf veya rakamla başlamalı; harf, rakam, boşluk, nokta, tire ve alt çizgi kullanılabilir!', false)
+    else hint('#nameHint', 'Uygun', true)
+    const pw = $('#passInput').value
+    if (!pw) hint('#passHint', '')
+    else if (pw.length < 6) hint('#passHint', 'Min. 6 karakter olmalı!', false)
+    else hint('#passHint', 'Uygun', true)
+    const p2 = $('#pass2Input').value
+    if (!p2) hint('#pass2Hint', '')
+    else if (p2 !== pw) hint('#pass2Hint', 'Şifreler aynı değil!', false)
+    else hint('#pass2Hint', 'Uygun', true)
+  }
+  for (const id of ['#nameInput', '#passInput', '#pass2Input']) $(id).addEventListener('input', updateRegHints)
   function setMode(m) {
     mode = m
     $('#tabLogin').setAttribute('aria-selected', String(m === 'login'))
     $('#tabRegister').setAttribute('aria-selected', String(m === 'register'))
     $('#pass2Field').hidden = m !== 'register'
     $('#pass2Input').required = m === 'register'
-    $('#nameHint').hidden = m !== 'register'
+    for (const id of ['#nameHint', '#passHint', '#pass2Hint']) $(id).hidden = true
+    if (m === 'register') updateRegHints()
     $('#nameInput').minLength = m === 'register' ? MIN_NEW_NAME : 0
     $('#forgotBtn').hidden = m !== 'login'
     $('#passInput').autocomplete = m === 'register' ? 'new-password' : 'current-password'
@@ -2671,7 +2716,7 @@ function wire() {
 
   // ekran paylaşımı: izleme paneli
   $('#watchBtn').addEventListener('click', () => {
-    if (S.share) return stopShare()
+    if (S.share) return openSelfWatch()
     const other = S.voice && sharerIn(S.voice.ch)
     if (other && !other.self) openWatch(other.id)
   })
@@ -2680,6 +2725,7 @@ function wire() {
   $('#stageBar').addEventListener('pointerenter', e => { if (e.pointerType !== 'touch') stageBarHover = true })
   $('#stageBar').addEventListener('pointerleave', () => { stageBarHover = false; if ($('#stage').classList.contains('show-bar')) showStageBar() })
   $('#stageStopShare').addEventListener('click', () => stopShare())
+  $('#leaveShareBtn').addEventListener('click', () => stopShare())
   $('#stageClose').addEventListener('click', closeWatch)
   $('#stageMini').addEventListener('click', () => $('#stage').classList.toggle('mini'))
   $('#stageFull').addEventListener('click', toggleFullscreen)
