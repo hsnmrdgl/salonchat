@@ -54,6 +54,7 @@ const ICONS = {
   speaker: svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>'),
   speakerOff: svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" x2="17" y1="9" y2="15"/><line x1="17" x2="23" y1="9" y2="15"/>'),
   image: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>'),
+  screenStop: svg('<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/><line x1="9" x2="15" y1="7" y2="13"/><line x1="15" x2="9" y1="7" y2="13"/>'),
   screen: svg('<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>'),
   expand: svg('<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/>'),
   pip: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><rect x="11" y="12" width="8" height="6" rx="1"/>'),
@@ -159,6 +160,7 @@ const NAME_RE = /^[A-Za-z0-9çğıöşüÇĞİÖŞÜ][A-Za-z0-9çğıöşüÇĞ�
 const validName = n => NAME_RE.test(n)
 // Yeni kayıt ve ad değiştirme için en az 6 karakter
 const MIN_NEW_NAME = 6
+const PASS_MAX = 72 // sunucudaki sınırla aynı (bcrypt en fazla 72 bayt okur)
 const validNewName = n => validName(n) && n.length >= MIN_NEW_NAME
 const NAME_RULE = 'Kullanıcı adı 2-20 karakter olmalı. Harf (Türkçe dahil), rakam, boşluk, nokta, tire ve alt çizgi kullanılabilir.'
 const NEW_NAME_RULE = 'Kullanıcı adı 6-20 karakter olmalı. Harf (Türkçe dahil), rakam, boşluk, nokta, tire ve alt çizgi kullanılabilir.'
@@ -239,7 +241,7 @@ function applyDir(list) {
   const m = new Map()
   for (const e of Array.isArray(list) ? list : []) {
     const name = normName(str(e?.u, 40))
-    if (validName(name) && isHex(e?.k, 64)) m.set(keyName(name), { name, pk: e.k, admin: e.a === true, v: Number(e.v) > 0 ? Number(e.v) : 0, created: Number(e.c) > 0 ? Number(e.c) : 0 })
+    if (validName(name) && isHex(e?.k, 64)) m.set(keyName(name), { name, pk: e.k, admin: e.a === true, v: Number(e.v) > 0 ? Number(e.v) : 0, created: Number(e.c) > 0 ? Number(e.c) : 0, seen: Number(e.s) > 0 ? Number(e.s) : 0 })
   }
   S.dir = m
   dirAt = Date.now()
@@ -699,6 +701,60 @@ function openImage(url) {
   $('#imgDlg').showModal()
 }
 
+/* ---- Yazıyor göstergesi ---- */
+// Yazan kişi her ~2,5 sn'de bir 'type' gönderir; alıcıda 4,5 sn sonra kendiliğinden söner. Sunucuya gitmez.
+const TYPING_MS = 4500
+const typers = new Map() // peerId -> { ch, until }
+let typingSent = 0
+function sendTyping(on) {
+  const ch = S.view
+  if (!A.type || !textIds.has(ch)) return
+  const now = Date.now()
+  if (on && now - typingSent < 2500) return
+  typingSent = on ? now : 0
+  try { A.type.send({ c: ch, t: on ? 1 : 0 }) } catch (e) { console.warn(e) }
+}
+function renderTyping() {
+  const el = $('#typing')
+  if (!el) return
+  const now = Date.now()
+  const names = []
+  for (const [id, t] of typers) {
+    const p = S.peers.get(id)
+    if (!p || t.until < now) { typers.delete(id); continue }
+    if (t.ch === S.view) names.push(p.name)
+  }
+  names.sort((a, b) => a.localeCompare(b, 'tr'))
+  el.textContent = !names.length ? ''
+    : names.length === 1 ? names[0] + ' yazıyor…'
+    : names.length === 2 ? names[0] + ' ve ' + names[1] + ' yazıyor…'
+    : 'Birkaç kişi yazıyor…'
+}
+
+/* ---- Son görülme ---- */
+// Sunucu her kullanıcının son bağlı olduğu zamanı tutar (update-1.12.sql). Biri ayrılınca bu oturumda tam anını da biliriz.
+const seenLocal = new Map() // keyName -> ms
+let seenOff = false
+async function touchSeen() {
+  if (seenOff || !S.live) return
+  try { await rpc('salon_seen') } catch (e) { seenOff = true; console.warn(e) } // SQL güncellemesi yoksa bir daha denenmez
+}
+function lastSeenOf(e) {
+  const t = Math.max(e.seen || 0, seenLocal.get(keyName(e.name)) || 0)
+  return t > 0 ? t : 0
+}
+function agoText(ts) {
+  const s = Math.max(0, (Date.now() - ts) / 1000)
+  if (s < 60) return 'az önce'
+  const m = Math.floor(s / 60)
+  if (m < 60) return m + ' dk önce'
+  const hr = Math.floor(m / 60)
+  if (hr < 24) return hr + ' sa önce'
+  const d = Math.floor(hr / 24)
+  if (d < 7) return d + ' gün önce'
+  return new Date(ts).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
 // Mesaj önce sunucuya kaydedilir (7 gün saklanır), sonra anında görünsün diye odadakilere de yayınlanır.
 async function sendMessage(text, img = null) {
   text = text.trim().replace(/\n{3,}/g, '\n\n') // art arda en fazla bir boş satır
@@ -718,6 +774,7 @@ async function sendMessage(text, img = null) {
   const m = cleanMsg(res.msg, S.id, S.name)
   if (!m) return false
   if (img) cacheImg(m.id, 'data:' + img.type + ';base64,' + img.b64) // gönderen için hemen görünsün
+  sendTyping(false)
   addMessage(m)
   // Görselin kendisi yayınlanmaz, yalnızca türü: alıcılar sunucudan çeker
   A.chat?.send({ id: m.id, ch: m.ch, text: m.text, img: m.img, ts: m.ts, name: S.name })
@@ -1755,7 +1812,8 @@ function renderMembers() {
       avatar(e.name, null),
       h('span', { class: 'meta' },
         h('strong', {}, e.name),
-        e.admin ? h('span', { class: 'm-tag' }, h('span', { class: 'badge', text: 'Yönetici' })) : null))))
+        e.admin ? h('span', { class: 'm-tag' }, h('span', { class: 'badge', text: 'Yönetici' })) : null,
+        lastSeenOf(e) ? h('small', { text: 'Son görülme: ' + agoText(lastSeenOf(e)) }) : null))))
   }
 }
 
@@ -1806,8 +1864,9 @@ function renderVoiceBar() {
   wb.hidden = S.share ? !!S.watch?.self : !sharer
   const lb = $('#leaveShareBtn')
   lb.hidden = !S.share
+  lb.title = lb.ariaLabel = 'Paylaşımı durdur'
   if (S.share) wb.textContent = 'Yayına katıl'
-  else if (sharer) wb.textContent = S.watch?.id === sharer.id ? 'Yayını aç' : 'İzle: ' + sharer.name
+  else if (sharer) wb.textContent = S.watch?.id === sharer.id ? 'Yayını kapat' : 'İzle: ' + sharer.name
   $('#voiceBar .vb-actions').hidden = wb.hidden && lb.hidden
   const info = $('#shareInfo')
   info.hidden = !S.share
@@ -1840,9 +1899,11 @@ function renderHeader() {
 }
 
 function viewChannel(id) {
+  if (S.view !== id) sendTyping(false)
   S.view = id
   S.unread.delete(id)
   renderMessages({ stick: true })
+  renderTyping()
   renderAll()
   closeDrawers()
   if (!matchMedia('(max-width: 780px)').matches) $('#msgInput').focus() // style.css'teki mobil sınırla aynı olmalı
@@ -1893,7 +1954,10 @@ function openUser(id, offline) {
   paintAvatar(av, p.name)
   $('#udName').textContent = p.name + ((p.offline ? p.admin : S.adminIds.has(id)) ? ' (yönetici)' : '')
   $('#udInfo').textContent = p.offline ? 'Çevrimdışı' : p.ch ? 'Ses kanalında: ' + chanName(p.ch) : statusOf(p.status).label
-  const created = S.dir.get(keyName(p.name))?.created
+  const ent = S.dir.get(keyName(p.name))
+  const seen = p.offline && ent ? lastSeenOf(ent) : 0
+  if (p.offline) $('#udInfo').textContent = seen ? 'Çevrimdışı · son görülme ' + agoText(seen) : 'Çevrimdışı'
+  const created = ent?.created
   const joined = $('#udJoined')
   joined.hidden = !created
   if (created) joined.textContent = 'Kayıt tarihi: ' + new Date(created).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -2147,6 +2211,7 @@ async function boot(me) {
   A.cmd = lobby.makeAction('cmd')
   A.avtr = lobby.makeAction('avtr')
   A.react = lobby.makeAction('react')
+  A.type = lobby.makeAction('type')
 
   A.presence.onMessage = (d, { peerId }) => onPresence(d, peerId)
   A.chat.onMessage = (d, { peerId }) => {
@@ -2155,6 +2220,8 @@ async function boot(me) {
     const m = cleanMsg(d, peerId, p.name)
     if (!m) return
     if (adminOnly.has(m.ch) && !S.adminIds.has(peerId)) return // duyuru kanalına yönetici dışı mesaj girmez
+    for (const [id] of typers) if (id === peerId) typers.delete(id)
+    renderTyping()
     addMessage(m)
   }
   // Silme bildirimi: yalnızca mesajın yazarı ya da bir yönetici gönderebilir (gerçek kontrol sunucudadır, bu sadece anlık görünüm)
@@ -2189,7 +2256,21 @@ async function boot(me) {
     updateNet()
     renderAll()
   }
+  // biri yazıyor: yalnızca görünüm için, kimliği doğrulanmış kişilerden ve gördüğümüz kanal için
+  A.type.onMessage = (d, { peerId }) => {
+    const p = S.peers.get(peerId)
+    if (!p?.ready || !d || typeof d !== 'object') return
+    const ch = str(d.c, 40)
+    if (!textIds.has(ch)) return
+    if (d.t === 1) typers.set(peerId, { ch, until: Date.now() + TYPING_MS })
+    else typers.delete(peerId)
+    renderTyping()
+  }
+
   lobby.onPeerLeave = id => {
+    const left = S.peers.get(id)
+    if (left?.ready) seenLocal.set(keyName(left.name), Date.now()) // son görülme: ayrıldığı an
+    typers.delete(id)
     if (S.watch?.id === id) closeWatch()
     S.peers.delete(id)
     S.adminIds.delete(id)
@@ -2207,6 +2288,9 @@ function startLoops() {
   loops = true
   setInterval(broadcastPresence, 20000)
   setInterval(updateNet, 2000)
+  touchSeen()
+  setInterval(touchSeen, 60000)
+  setInterval(() => { renderMembers(); renderTyping() }, 5000) // "x dk önce" ve süresi dolan "yazıyor" yazıları tazelenir
   setInterval(() => { dirAt = 0; refreshDir() }, 5 * 60e3) // yönetici değişiklikleri vb. için
   setInterval(loadMessages, 30000) // kaçırılan mesajlar ve silmeler için
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadMessages() })
@@ -2504,6 +2588,7 @@ function wire() {
     const pw = $('#passInput').value
     if (!pw) hint('#passHint', '')
     else if (pw.length < 6) hint('#passHint', 'Min. 6 karakter olmalı!', false)
+    else if (pw.length > PASS_MAX) hint('#passHint', 'Maks. ' + PASS_MAX + ' karakter olabilir!', false)
     else hint('#passHint', 'Uygun', true)
     const p2 = $('#pass2Input').value
     if (!p2) hint('#pass2Hint', '')
@@ -2541,6 +2626,7 @@ function wire() {
     } else if (!validName(name)) return showLoginError(NAME_RULE)
     const password = $('#passInput').value
     if (password.length < 6) return showLoginError('Şifre en az 6 karakter olmalı.')
+    if (password.length > PASS_MAX) return showLoginError('Şifre en fazla ' + PASS_MAX + ' karakter olabilir.')
     if (mode === 'register' && password !== $('#pass2Input').value) return showLoginError('Şifreler aynı değil.')
     enter({ mode, name, password })
   })
@@ -2563,6 +2649,7 @@ function wire() {
     if (!validName(name)) return fail(NAME_RULE)
     if (!code) return fail('Yöneticiden aldığın kodu yaz.')
     if (pass.length < 6) return fail('Şifre en az 6 karakter olmalı.')
+    if (pass.length > PASS_MAX) return fail('Şifre en fazla ' + PASS_MAX + ' karakter olabilir.')
     if (pass !== $('#resetPass2').value) return fail('Şifreler aynı değil.')
     const btn = $('#resetSubmit')
     btn.disabled = true
@@ -2680,6 +2767,7 @@ function wire() {
   $('#attachBtn').addEventListener('click', () => $('#fileInput').click())
   $('#fileInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; setPending(f) })
   $('#attachClear').addEventListener('click', clearPending)
+  $('#msgInput').addEventListener('input', () => sendTyping($('#msgInput').value.trim().length > 0))
   $('#msgInput').addEventListener('paste', e => {
     const f = [...(e.clipboardData?.files || [])].find(x => x.type.startsWith('image/'))
     if (f) { e.preventDefault(); setPending(f) }
@@ -2718,7 +2806,9 @@ function wire() {
   $('#watchBtn').addEventListener('click', () => {
     if (S.share) return openSelfWatch()
     const other = S.voice && sharerIn(S.voice.ch)
-    if (other && !other.self) openWatch(other.id)
+    if (!other || other.self) return
+    if (S.watch?.id === other.id) closeWatch() // izliyorsan düğme "Yayını kapat" olur
+    else openWatch(other.id)
   })
   $('#stage').addEventListener('pointermove', showStageBar)
   $('#stage').addEventListener('pointerdown', showStageBar)
