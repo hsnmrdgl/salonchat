@@ -1773,13 +1773,26 @@ function renderChannels() {
         return h('li', {}, h('button', { class: 'vuser' + (pending ? ' pending' : ''), onclick: () => openUser(p.id) },
           avatar(p.name, p.self ? 'me' : p.id, 'small'),
           h('span', { class: 'nm', text: p.name }),
-          p.share ? h('span', { class: 'live-pill', text: 'CANLI', title: 'Ekran paylaşıyor' }) : null,
+          p.share ? h('span', { class: 'live-pill', role: 'button', tabindex: '0', text: 'CANLI', title: p.self ? 'Yayınını izle' : 'Yayını izle',
+            onclick: e => { e.stopPropagation(); watchLive(p, c.id) },
+            onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); watchLive(p, c.id) } } }) : null,
           (muted || p.deaf) ? h('span', { class: 'st', html: ico(p.deaf ? 'headphonesOff' : 'micOff'), title: p.deaf ? 'Sesi kapalı' : 'Mikrofonu kapalı' }) : null,
           (!p.self && userMuted(p.name)) ? h('span', { class: 'st', html: ico('speakerOff'), title: 'Senin için susturuldu' }) : null))
       })))
     }
     vl.append(li)
   }
+}
+
+// "CANLI" etiketine basınca yayın açılır; başka bir ses kanalındaysan önce o kanala katılır
+async function watchLive(p, ch) {
+  if (p.self) return openSelfWatch()
+  if (S.voice?.ch !== ch) {
+    await joinVoice(ch)
+    if (S.voice?.ch !== ch) return
+  }
+  closeDrawers()
+  openWatch(p.id)
 }
 
 function renderMembers() {
@@ -1865,6 +1878,8 @@ function renderVoiceBar() {
   const lb = $('#leaveShareBtn')
   lb.hidden = !S.share
   lb.title = lb.ariaLabel = 'Paylaşımı durdur'
+  wb.classList.toggle('danger', !S.share && !!sharer && S.watch?.id === sharer.id) // izlerken kırmızı "Yayını kapat"
+  wb.classList.toggle('primary', !wb.classList.contains('danger'))
   if (S.share) wb.textContent = 'Yayına katıl'
   else if (sharer) wb.textContent = S.watch?.id === sharer.id ? 'Yayını kapat' : 'İzle: ' + sharer.name
   $('#voiceBar .vb-actions').hidden = wb.hidden && lb.hidden
@@ -1906,7 +1921,8 @@ function viewChannel(id) {
   renderTyping()
   renderAll()
   closeDrawers()
-  if (!matchMedia('(max-width: 780px)').matches) $('#msgInput').focus() // style.css'teki mobil sınırla aynı olmalı
+  // yayın izlenirken metin kanalına geçince yayın küçük pencereye iner
+  if (S.watch) $('#stage').classList.add('mini')
 }
 
 /* ------------------------------------------------------------------ */
