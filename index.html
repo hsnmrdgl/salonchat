@@ -28,15 +28,17 @@
     </div>
 
     <label for="nameInput">Kullanıcı adı</label>
-    <input id="nameInput" maxlength="20" required placeholder="Örn. Ayşe" autocomplete="username" autocapitalize="off" spellcheck="false">
-    <p class="hint" id="nameHint" hidden>En az 6, en fazla 20 karakter.</p>
+    <input id="nameInput" maxlength="20" required autocomplete="username" autocapitalize="off" spellcheck="false">
+    <p class="hint" id="nameHint" hidden></p>
 
     <label for="passInput">Şifre</label>
-    <input id="passInput" type="password" required minlength="6" placeholder="En az 6 karakter" autocomplete="current-password">
+    <input id="passInput" type="password" required minlength="6" autocomplete="current-password">
+    <p class="hint" id="passHint" hidden></p>
 
     <div id="pass2Field" hidden>
       <label for="pass2Input">Şifre tekrar</label>
       <input id="pass2Input" type="password" autocomplete="new-password">
+      <p class="hint" id="pass2Hint" hidden></p>
     </div>
 
     <button type="button" id="forgotBtn" class="linkbtn">Şifremi unuttum</button>
@@ -57,7 +59,7 @@
     <p class="lead" id="inviteHello">Sunucuya katılmak için yöneticiden aldığın davet kodunu yaz.</p>
 
     <label for="inviteCode">Davet kodu</label>
-    <input id="inviteCode" maxlength="12" required placeholder="Örn. K7M2-QX9P" autocapitalize="characters" autocomplete="off" spellcheck="false">
+    <input id="inviteCode" maxlength="12" required autocapitalize="characters" autocomplete="off" spellcheck="false">
     <p class="hint">8 karakter. Kod tek kullanımlıktır ve sadece bir kez girmen yeterli.</p>
 
     <button class="btn primary" id="inviteSubmit" type="submit">Katıl</button>
@@ -95,6 +97,7 @@
       </div>
       <div class="vb-actions" hidden>
         <button type="button" id="watchBtn" class="btn small primary" hidden>İzle</button>
+        <button type="button" id="leaveShareBtn" class="btn small danger" hidden>Yayından çık</button>
       </div>
       <p id="shareInfo" class="vb-share" hidden></p>
     </div>
@@ -402,7 +405,7 @@
     </div>
     <div class="field">
       <label for="passNew">Yeni şifre</label>
-      <input id="passNew" type="password" required minlength="6" maxlength="72" placeholder="En az 6 karakter" autocomplete="new-password">
+      <input id="passNew" type="password" required minlength="6" maxlength="72" autocomplete="new-password">
     </div>
     <div class="field">
       <label for="passNew2">Yeni şifre tekrar</label>
@@ -432,11 +435,11 @@
     </div>
     <div class="field">
       <label for="resetCode">Sıfırlama kodu</label>
-      <input id="resetCode" required placeholder="Örn. 3F9A1-C07BD" autocapitalize="characters" spellcheck="false">
+      <input id="resetCode" required autocapitalize="characters" spellcheck="false">
     </div>
     <div class="field">
       <label for="resetPass">Yeni şifre</label>
-      <input id="resetPass" type="password" required minlength="6" placeholder="En az 6 karakter" autocomplete="new-password">
+      <input id="resetPass" type="password" required minlength="6" autocomplete="new-password">
     </div>
     <div class="field">
       <label for="resetPass2">Yeni şifre tekrar</label>
