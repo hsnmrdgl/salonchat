@@ -74,6 +74,8 @@ textarea { resize: vertical; font-family: ui-monospace, Consolas, monospace; fon
 
 .muted { color: var(--muted); }
 .hint { color: var(--faint); font-size: 13px; margin-top: 6px; }
+.hint.ok { color: var(--ok); }
+.hint.bad { color: var(--danger); }
 .error { color: var(--danger); margin-top: 12px; }
 code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 13px; }
 .grow { flex: 1; }
