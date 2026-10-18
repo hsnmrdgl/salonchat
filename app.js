@@ -1402,6 +1402,28 @@ function trackFps(video, cb) {
   return () => { alive = false }
 }
 
+// Yayın kontrolleri: fare ya da dokunma yayının üzerinde hareket edince alttan belirir, 3 sn hareketsizlikte iner.
+// Fare kontrollerin üzerindeyse ya da odak içindeyse kaybolmaz.
+const STAGE_BAR_MS = 3000
+let stageBarTimer = 0
+let stageBarHover = false // fare çubuğun üzerinde mi (pointerenter/leave ile izlenir)
+function showStageBar() {
+  const stage = $('#stage')
+  const bar = $('#stageBar')
+  stage.classList.add('show-bar')
+  clearTimeout(stageBarTimer)
+  const arm = () => {
+    if (stageBarHover || bar.matches(':focus-within')) { stageBarTimer = setTimeout(arm, STAGE_BAR_MS); return }
+    stage.classList.remove('show-bar')
+  }
+  stageBarTimer = setTimeout(arm, STAGE_BAR_MS)
+}
+function hideStageBar() {
+  clearTimeout(stageBarTimer)
+  stageBarHover = false
+  $('#stage').classList.remove('show-bar')
+}
+
 function openWatch(id) {
   const v = S.voice
   const p = S.peers.get(id)
@@ -1435,6 +1457,8 @@ function openWatch(id) {
   $('#stageWait').hidden = false
   $('#stageWait').textContent = 'Bağlanıyor…'
   $('#stageAudio').hidden = true
+  $('#stageStopShare').hidden = true // "Paylaşımı durdur" yalnızca kendi yayınını izleyen paylaşan kişide görünür
+  showStageBar()
   closeDrawers()
   renderAll()
 }
@@ -1455,6 +1479,8 @@ function openSelfWatch() {
   $('#stageTitle').textContent = 'Senin yayının (önizleme)'
   $('#stageInfo').textContent = ''
   $('#stageWait').hidden = true
+  $('#stageStopShare').hidden = false
+  showStageBar()
   showStream(w, sh.stream)
   closeDrawers()
   renderAll()
@@ -1492,6 +1518,8 @@ function closeWatch() {
   const stage = $('#stage')
   stage.hidden = true
   stage.classList.remove('mini')
+  hideStageBar()
+  $('#stageStopShare').hidden = true
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
   renderAll()
 }
@@ -1720,7 +1748,6 @@ function openUser(id, offline) {
   const dlg = $('#userDlg')
   const av = $('#udAvatar')
   paintAvatar(av, p.name)
-  av.dataset.uid = p.self ? 'me' : id
   $('#udName').textContent = p.name + ((p.offline ? p.admin : S.adminIds.has(id)) ? ' (yönetici)' : '')
   $('#udInfo').textContent = p.offline ? 'Çevrimdışı' : p.ch ? 'Ses kanalında: ' + chanName(p.ch) : statusOf(p.status).label
   const created = S.dir.get(keyName(p.name))?.created
@@ -1943,7 +1970,7 @@ function updateNet() {
   const others = [...S.peers.values()].filter(p => p.ready).length
   let cls = ''
   let label = 'Bağlanıyor'
-  if (relays > 0) { cls = 'ok'; label = others ? 'Bağlı, ' + (others + 1) + ' kişi' : '' }
+  if (relays > 0) cls = 'ok' // bağlıyken yazı yok, yalnızca yeşil nokta
   else if (Date.now() - bootTime > 15000) { cls = 'bad'; label = 'Röleye ulaşılamıyor' }
   el.className = 'net ' + cls
   el.title = label || (cls === 'ok' ? 'Bağlı' : 'Bağlantı durumu')
@@ -2506,6 +2533,11 @@ function wire() {
     const other = S.voice && sharerIn(S.voice.ch)
     if (other && !other.self) openWatch(other.id)
   })
+  $('#stage').addEventListener('pointermove', showStageBar)
+  $('#stage').addEventListener('pointerdown', showStageBar)
+  $('#stageBar').addEventListener('pointerenter', e => { if (e.pointerType !== 'touch') stageBarHover = true })
+  $('#stageBar').addEventListener('pointerleave', () => { stageBarHover = false; if ($('#stage').classList.contains('show-bar')) showStageBar() })
+  $('#stageStopShare').addEventListener('click', () => stopShare())
   $('#stageClose').addEventListener('click', closeWatch)
   $('#stageMini').addEventListener('click', () => $('#stage').classList.toggle('mini'))
   $('#stageFull').addEventListener('click', toggleFullscreen)
