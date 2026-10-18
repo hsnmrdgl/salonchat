@@ -226,21 +226,36 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .msg time { color: var(--faint); font-size: 12px; }
 .msg .body { overflow-wrap: anywhere; white-space: pre-wrap; }
 .msg a { color: var(--accent); }
-.msg .del { position: absolute; right: 8px; top: 2px; display: none; width: 28px; height: 28px; }
-.msg:hover .del { display: inline-grid; }
-.msg .del svg { width: 15px; height: 15px; }
+/* Fare üzerine gelince (dokunmatikte mesaja dokununca) sağ üstte tepki ve sil düğmeleri çıkar */
+.msg .tools { position: absolute; right: 8px; top: -4px; display: none; gap: 2px; padding: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, .35); }
+.msg:hover .tools, .msg:focus-within .tools, .msg.show-tools .tools { display: inline-flex; }
+.msg .tools .icon-btn { width: 28px; height: 28px; }
+.msg .tools .icon-btn svg { width: 15px; height: 15px; }
+
+/* Tepkiler */
+.reacts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.react-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 7px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 13px; line-height: 20px; color: var(--muted); transition: background .12s, border-color .12s; }
+.react-chip:hover { background: var(--raise); }
+.react-chip .n { font-weight: 700; font-size: 12px; }
+.react-chip.mine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--text); }
+.react-picker { position: fixed; z-index: 60; display: flex; gap: 2px; padding: 5px; background: var(--raise); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, .5); animation: pick .14s ease-out; }
+.react-picker button { width: 34px; height: 34px; border: 0; border-radius: 8px; background: transparent; font-size: 19px; line-height: 1; transition: transform .1s, background .1s; }
+.react-picker button:hover { background: var(--surface); transform: scale(1.18); }
+.react-picker button.on { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+@keyframes pick { from { transform: translateY(4px); opacity: 0; } }
 
 .empty { color: var(--muted); padding: 14px; font-size: 14px; }
 .messages .empty { margin: auto; text-align: center; max-width: 36ch; }
 
-.composer { display: flex; align-items: center; gap: 6px; margin: 8px 16px 16px; padding: 4px 6px 4px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.composer { display: flex; align-items: flex-end; gap: 6px; margin: 8px 16px 16px; padding: 4px 6px 4px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
 .composer:focus-within { border-color: var(--accent); }
-.composer input { border: 0; background: transparent; padding: 10px 0; }
-.composer input:focus { outline: none; }
+/* Çok satırlı yazı kutusu: içeriğe göre büyür (app.js autosizeInput), en fazla ~8 satır */
+.composer textarea { flex: 1; min-width: 0; border: 0; background: transparent; padding: 8px 0; min-height: 36px; max-height: 164px; resize: none; overflow-y: auto; font: inherit; line-height: 20px; scrollbar-width: thin; }
+.composer textarea:focus { outline: none; }
 .composer .send { color: var(--accent); }
 .composer.locked { opacity: .6; }
 .composer.locked:focus-within { border-color: var(--line); }
-.composer input:disabled { cursor: not-allowed; }
+.composer textarea:disabled { cursor: not-allowed; }
 .composer .send:disabled { color: var(--faint); cursor: not-allowed; }
 .composer .send:disabled:hover { background: transparent; }
 
