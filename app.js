@@ -428,9 +428,10 @@ async function onPresence(d, peerId) {
     const waiting = S.voice.waiting.get(peerId)
     if (waiting) { S.voice.waiting.delete(peerId); attachRemote(peerId, waiting) }
   }
-  if (S.voice && peer.ch === S.voice.ch && peer.share && !prev?.share) {
-    toast(peer.name + ' ekran paylaşıyor. İzlemek için soldaki "İzle" düğmesine bas.')
-  }
+  // aynı ses kanalındaki biri paylaşıma başlayınca / paylaşımı bitirince mesaj yerine ayrı bir ses çalar
+  // (kanaldan ayrılan paylaşanın sesi zaten "ayrıldı" sesiyle duyulur)
+  if (S.voice && peer.ch === S.voice.ch && peer.share && !prev?.share) tone('share')
+  else if (S.voice && prev?.share && !peer.share && peer.ch === S.voice.ch && prev.ch === S.voice.ch) tone('shareEnd')
   if (S.share && S.voice && peer.ch === S.voice.ch && peer.share) {
     if (peer.takeover === S.id) {
       // biri paylaşımı devraldı: önceki paylaşanın yayını kapanır
@@ -444,7 +445,6 @@ async function onPresence(d, peerId) {
   }
   if (S.watch?.id === peerId && (!peer.share || peer.ch !== S.watch.ch)) {
     closeWatch()
-    toast(peer.name + ' paylaşımı bitirdi.')
   }
   refreshRemoteAudio(peerId)
   renderAll()
@@ -777,6 +777,16 @@ function linkify(text) {
   return frag
 }
 
+const dayKey = ts => { const d = new Date(ts); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate() }
+function dayLabel(ts) {
+  const day = dayKey(ts)
+  const now = new Date()
+  if (day === dayKey(now.getTime())) return 'Bugün'
+  const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+  if (day === dayKey(y.getTime())) return 'Dün'
+  return new Date(ts).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long' })
+}
+
 function renderMessages({ stick = false } = {}) {
   const box = $('#messages')
   const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 90
@@ -791,7 +801,10 @@ function renderMessages({ stick = false } = {}) {
   box.append(h('div', { class: 'spacer' }))
   let prev = null
   for (const m of list) {
-    const grouped = prev && prev.name === m.name && m.ts - prev.ts < 5 * 60e3
+    // gün değişince (yerel saate göre) tarihli bir ayraç konur; yeni gün her zaman yeni bir mesaj grubu başlatır
+    const newDay = !prev || dayKey(prev.ts) !== dayKey(m.ts)
+    if (newDay) box.append(h('div', { class: 'day-sep', role: 'separator' }, h('span', { text: dayLabel(m.ts) })))
+    const grouped = !newDay && prev.name === m.name && m.ts - prev.ts < 5 * 60e3
     const mine = keyName(m.name) === S.key
     const del = (isAdmin() || mine) ? h('button', { class: 'icon-btn del', 'aria-label': 'Mesajı sil', title: mine ? 'Mesajını sil' : 'Mesajı sil', html: ico('x'), onclick: () => deleteMessage(m) }) : null
     const gutter = grouped
@@ -822,19 +835,26 @@ function ensureAudio() {
   if (AC.state === 'suspended') AC.resume().catch(() => {})
 }
 
+// Dizi biçimindeki sesler sinüs dalgasıdır. Ekran paylaşımı sesleri üç notalı ve üçgen dalgadır; katılma/ayrılma seslerinden
+// daha parlak ve uzun olduğu için ayırt edilirler: başlayınca yükselir, bitince alçalır.
 const TONES = {
   join: [[523, .09], [784, .13]],
   leave: [[587, .09], [392, .15]],
   mute: [[330, .08]],
-  unmute: [[494, .08]]
+  unmute: [[494, .08]],
+  share: { type: 'triangle', notes: [[698, .08], [932, .08], [1397, .16]] },
+  shareEnd: { type: 'triangle', notes: [[1175, .08], [880, .08], [622, .16]] }
 }
 function tone(name) {
   if (!S.settings.sounds || !AC || S.me.deaf) return
+  const def = TONES[name]
+  const notes = Array.isArray(def) ? def : def?.notes
+  const wave = Array.isArray(def) ? 'sine' : (def?.type || 'sine')
   let t = AC.currentTime
-  for (const [f, d] of TONES[name] || []) {
+  for (const [f, d] of notes || []) {
     const o = AC.createOscillator()
     const g = AC.createGain()
-    o.type = 'sine'
+    o.type = wave
     o.frequency.value = f
     g.gain.setValueAtTime(0.0001, t)
     g.gain.linearRampToValueAtTime(0.07, t + 0.01)
@@ -1259,9 +1279,6 @@ async function startShare() {
   // kanalda başka biri paylaşıyorsa onun yayını kapanır (devralma)
   const current = sharerIn(v.ch)
   const takeover = current && !current.self ? current.id : ''
-  if (wantAudio && !stream.getAudioTracks().length) {
-    toast('Seçtiğin kaynakta ses paylaşımı yok. Ses için Chrome ya da Edge\'de tüm ekranı veya bir sekmeyi seçip "ses paylaş" kutusunu işaretle.', 'err')
-  }
   track.contentHint = p.hint
 
   let room
@@ -1302,7 +1319,6 @@ async function startShare() {
   }, 15000)
   broadcastPresence()
   renderAll()
-  toast(takeover ? 'Ekran paylaşımı başladı. ' + current.name + ' kullanıcısının yayını kapandı.' : 'Ekran paylaşımı başladı. Kanaldakiler "İzle"ye bastıkça yayın onlara gider.')
 }
 
 function stopShare(quiet) {
@@ -1314,7 +1330,6 @@ function stopShare(quiet) {
   try { sh.room.leave() } catch { /* yoksay */ }
   sh.stream.getTracks().forEach(t => t.stop())
   broadcastPresence()
-  if (!quiet) toast('Ekran paylaşımı durdu.')
   renderAll()
 }
 
@@ -1443,7 +1458,7 @@ function openWatch(id) {
     showStream(w, st)
   }
   room.onPeerLeave = pid => {
-    if (S.watch === w && pid === w.id) { closeWatch(); toast(p.name + ' paylaşımı bitirdi.') }
+    if (S.watch === w && pid === w.id) closeWatch()
   }
   w.timer = setTimeout(() => {
     if (S.watch === w && !w.stream) $('#stageWait').textContent = 'Bağlanılamadı. Paylaşan kişinin ağı doğrudan bağlantıya izin vermiyor olabilir.'
@@ -2045,7 +2060,7 @@ async function boot(me) {
     renderAll()
   }
   lobby.onPeerLeave = id => {
-    if (S.watch?.id === id) { closeWatch(); toast((S.peers.get(id)?.name || 'Paylaşan kişi') + ' ayrıldı, yayın bitti.') }
+    if (S.watch?.id === id) closeWatch()
     S.peers.delete(id)
     S.adminIds.delete(id)
     S.srvMuted.delete(id)
