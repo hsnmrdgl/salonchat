@@ -32,12 +32,12 @@
     <p class="hint" id="nameHint" hidden></p>
 
     <label for="passInput">Şifre</label>
-    <input id="passInput" type="password" required minlength="6" autocomplete="current-password">
+    <input id="passInput" type="password" required minlength="6" maxlength="72" autocomplete="current-password">
     <p class="hint" id="passHint" hidden></p>
 
     <div id="pass2Field" hidden>
       <label for="pass2Input">Şifre tekrar</label>
-      <input id="pass2Input" type="password" autocomplete="new-password">
+      <input id="pass2Input" type="password" maxlength="72" autocomplete="new-password">
       <p class="hint" id="pass2Hint" hidden></p>
     </div>
 
@@ -97,7 +97,7 @@
       </div>
       <div class="vb-actions" hidden>
         <button type="button" id="watchBtn" class="btn small primary" hidden>İzle</button>
-        <button type="button" id="leaveShareBtn" class="btn small danger" hidden>Yayından çık</button>
+        <button type="button" id="leaveShareBtn" class="icon-btn danger" aria-label="Paylaşımı durdur" title="Paylaşımı durdur" data-icon="screenStop" hidden></button>
       </div>
       <p id="shareInfo" class="vb-share" hidden></p>
     </div>
@@ -137,6 +137,8 @@
       <span id="attachName"></span>
       <button type="button" id="attachClear" class="icon-btn" aria-label="Görseli kaldır" data-icon="x"></button>
     </div>
+
+    <div id="typing" class="typing" aria-live="polite"></div>
 
     <form id="composer" class="composer" autocomplete="off">
       <button type="button" id="attachBtn" class="icon-btn attach" aria-label="Görsel ekle" title="Görsel ekle" data-icon="image"></button>
@@ -401,7 +403,7 @@
 
     <div class="field">
       <label for="passOld">Mevcut şifre</label>
-      <input id="passOld" type="password" required autocomplete="current-password">
+      <input id="passOld" type="password" required maxlength="72" autocomplete="current-password">
     </div>
     <div class="field">
       <label for="passNew">Yeni şifre</label>
@@ -439,11 +441,11 @@
     </div>
     <div class="field">
       <label for="resetPass">Yeni şifre</label>
-      <input id="resetPass" type="password" required minlength="6" autocomplete="new-password">
+      <input id="resetPass" type="password" required minlength="6" maxlength="72" autocomplete="new-password">
     </div>
     <div class="field">
       <label for="resetPass2">Yeni şifre tekrar</label>
-      <input id="resetPass2" type="password" required autocomplete="new-password">
+      <input id="resetPass2" type="password" maxlength="72" required autocomplete="new-password">
     </div>
     <p id="resetErr" class="error" role="alert" hidden></p>
 
