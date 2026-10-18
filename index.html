@@ -178,6 +178,7 @@
     </header>
     <ul id="memberList" class="member-list"></ul>
     <p id="emptyHint" class="empty" hidden>Şu an kimse yok. Arkadaşların linke girip aynı davet koduyla katılınca burada görünürler.</p>
+    <div class="m-foot"><button type="button" id="inviteOpen" class="btn invite-btn">Davet et</button></div>
   </aside>
 </div>
 
@@ -322,17 +323,18 @@
   </form>
 </dialog>
 
-<!-- Davet kodları (yönetici) -->
+<!-- Davet kodları: herkes kendininkini, yönetici ayarlardan hepsini görür -->
 <dialog id="invDlg" class="dlg">
   <div>
     <header class="dlg-head">
-      <h3>Davet kodları</h3>
+      <h3 id="invTitle">Davet et</h3>
       <button type="button" id="invClose" class="icon-btn" aria-label="Kapat" data-icon="x"></button>
     </header>
-    <p class="muted">Her kod 8 karakterlidir, bir kez kullanılabilir ve kullanılana ya da sen silene kadar geçerlidir.</p>
+    <p class="muted" id="invNote"></p>
     <div class="row">
       <button type="button" id="invNew" class="btn primary">Yeni kod oluştur</button>
     </div>
+    <p id="invQuota" class="hint"></p>
     <ul id="invList" class="inv-list"></ul>
     <p id="invEmpty" class="hint" hidden>Henüz davet kodu yok.</p>
     <p id="invErr" class="error" role="alert" hidden></p>
