@@ -60,6 +60,7 @@ const ICONS = {
   menu: svg('<line x1="4" x2="20" y1="7" y2="7"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="17" y2="17"/>'),
   users: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
   send: svg('<line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>'),
+  smile: svg('<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/>'),
   x: svg('<line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>'),
   copy: svg('<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'),
   trash: svg('<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>')
@@ -195,7 +196,9 @@ const ERR = {
   invalid_image: 'Görsel geçersiz ya da çok büyük (en fazla yaklaşık 1 MB). JPEG, PNG, GIF ve WebP desteklenir.',
   invalid_avatar: 'Fotoğraf geçersiz ya da çok büyük.',
   avatar_rate: 'Fotoğrafı çok sık değiştirdin, biraz bekle.',
-  user_not_found: 'Bu adda bir kullanıcı bulunamadı.'
+  user_not_found: 'Bu adda bir kullanıcı bulunamadı.',
+  invalid_emoji: 'Bu emoji kullanılamıyor.',
+  not_found: 'Mesaj bulunamadı, silinmiş olabilir.'
 }
 
 async function loadLibs() {
@@ -460,6 +463,26 @@ function roster() {
 /* Sohbet                                                              */
 /* ------------------------------------------------------------------ */
 
+// Mesaj tepkileri: kullanıcı mesaj başına tek tepki verebilir. Liste update-1.9.sql'deki ile aynı olmalı (sunucu da kontrol eder).
+const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👀']
+
+// Sunucudan gelen [{ e, u }] listesini temizler: yalnızca izinli emojiler, kişi başına en fazla bir tepki
+function cleanReacts(list) {
+  if (!Array.isArray(list)) return []
+  const seen = new Set()
+  const out = []
+  for (const r of list.slice(0, 500)) {
+    const e = r?.e
+    const u = normName(str(r?.u, 40))
+    if (!REACTIONS.includes(e) || !u || seen.has(keyName(u))) continue
+    seen.add(keyName(u))
+    out.push({ e, u })
+  }
+  return out
+}
+const reactSig = m => (m.react || []).map(r => r.e + r.u).join('|')
+const myReaction = m => (m.react || []).find(r => keyName(r.u) === S.key)?.e || ''
+
 function cleanMsg(d, from, forcedName) {
   if (!d || typeof d !== 'object') return null
   const ch = str(d.ch, 40)
@@ -469,7 +492,7 @@ function cleanMsg(d, from, forcedName) {
   if (!text.trim() && !img) return null
   const id = str(d.id, 64)
   if (!id) return null
-  return { id, ch, text, img, ts: Number.isFinite(d.ts) ? d.ts : Date.now(), name: forcedName || str(d.name, 24) || 'Misafir', from: str(from, 80) }
+  return { id, ch, text, img, ts: Number.isFinite(d.ts) ? d.ts : Date.now(), name: forcedName || str(d.name, 24) || 'Misafir', from: str(from, 80), react: cleanReacts(d.r) }
 }
 
 function addMessage(m, { silent = false } = {}) {
@@ -678,7 +701,7 @@ function openImage(url) {
 
 // Mesaj önce sunucuya kaydedilir (7 gün saklanır), sonra anında görünsün diye odadakilere de yayınlanır.
 async function sendMessage(text, img = null) {
-  text = text.trim()
+  text = text.trim().replace(/\n{3,}/g, '\n\n') // art arda en fazla bir boş satır
   const ch = S.view
   if ((!text && !img) || !textIds.has(ch)) return false
   if (adminOnly.has(ch) && !isAdmin()) { toast(ERR.admin_only, 'err'); return false }
@@ -736,7 +759,8 @@ async function loadMessages({ first = false } = {}) {
   if (!Array.isArray(list)) return
   const now = Date.now()
   const known = new Set([...S.history.values()].flat().map(m => m.id))
-  const before = (S.history.get(S.view) || []).map(m => m.id).join()
+  const sig = l => l.map(m => m.id + ':' + reactSig(m)).join() // mesajlar ve tepkiler değiştiyse yeniden çizilir
+  const before = sig(S.history.get(S.view) || [])
   const next = new Map()
   const put = m => { const l = next.get(m.ch) || []; l.push(m); next.set(m.ch, l) }
   for (const raw of list) {
@@ -757,7 +781,7 @@ async function loadMessages({ first = false } = {}) {
   if (!first) {
     for (const [ch, l] of next) if (ch !== S.view && l.some(m => !known.has(m.id) && keyName(m.name) !== S.key)) S.unread.add(ch)
   }
-  if ((S.history.get(S.view) || []).map(m => m.id).join() !== before) renderMessages()
+  if (sig(S.history.get(S.view) || []) !== before) renderMessages()
   renderChannels()
 }
 
@@ -777,6 +801,70 @@ function linkify(text) {
   return frag
 }
 
+/* ---- Tepkiler ---- */
+
+// Mesajın altındaki tepki çipleri. Çipe basınca: benimkiyse kalkar, başkasının seçtiği emojiyse tepkim ona geçer.
+function reactRow(m) {
+  const by = new Map()
+  for (const r of m.react || []) { const l = by.get(r.e) || []; l.push(r.u); by.set(r.e, l) }
+  if (!by.size) return null
+  const mine = myReaction(m)
+  const row = h('div', { class: 'reacts' })
+  for (const e of REACTIONS) {
+    const names = by.get(e)
+    if (!names) continue
+    const on = e === mine
+    row.append(h('button', {
+      type: 'button', class: 'react-chip' + (on ? ' mine' : ''), title: names.join(', '),
+      'aria-pressed': String(on), 'aria-label': e + ' ' + names.length + ' kişi' + (on ? ', senin tepkin' : ''),
+      onclick: () => reactTo(m, on ? '' : e)
+    }, h('span', { text: e }), h('span', { class: 'n', text: String(names.length) })))
+  }
+  return row
+}
+
+let reactPing = 0
+let reactPicker = null
+function closeReactPicker() { reactPicker?.remove(); reactPicker = null }
+
+function openReactPicker(m, anchor) {
+  const same = reactPicker?.dataset.id === m.id
+  closeReactPicker()
+  if (same) return // aynı düğmeye ikinci basış menüyü kapatır
+  const mine = myReaction(m)
+  const pop = h('div', { class: 'react-picker', role: 'menu', 'aria-label': 'Tepki seç', 'data-id': m.id })
+  for (const e of REACTIONS) {
+    pop.append(h('button', {
+      type: 'button', role: 'menuitemradio', class: e === mine ? 'on' : '', 'aria-checked': String(e === mine), 'aria-label': e,
+      onclick: ev => { ev.stopPropagation(); closeReactPicker(); reactTo(m, e === mine ? '' : e) }
+    }, e))
+  }
+  document.body.append(pop)
+  const r = anchor.getBoundingClientRect()
+  const w = pop.offsetWidth
+  const hgt = pop.offsetHeight
+  pop.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w)) + 'px'
+  pop.style.top = (r.top - hgt - 6 >= 8 ? r.top - hgt - 6 : r.bottom + 6) + 'px'
+  reactPicker = pop
+}
+
+// Tek tepki hakkı: bu kullanıcının önceki tepkisi her zaman silinir, emoji doluysa yenisi eklenir.
+// Önce ekranda anında gösterilir, sunucu reddederse eski haline döner.
+async function reactTo(m, emoji) {
+  const old = m.react || []
+  m.react = old.filter(r => keyName(r.u) !== S.key)
+  if (emoji) m.react.push({ e: emoji, u: S.name })
+  renderMessages()
+  let res
+  try { res = await rpc('salon_react', { p_msg: m.id, p_emoji: emoji }) } catch (e) { res = { ok: false, error: e instanceof AuthError ? e.message : '' } }
+  if (!res?.ok) {
+    m.react = old
+    renderMessages()
+    return toast(ERR[res?.error] || res?.error || 'Tepki verilemedi.', 'err')
+  }
+  try { A.react?.send({ id: m.id }) } catch (e) { console.warn(e) } // diğerleri listeyi sunucudan tazeler
+}
+
 const dayKey = ts => { const d = new Date(ts); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate() }
 function dayLabel(ts) {
   const day = dayKey(ts)
@@ -791,6 +879,7 @@ function renderMessages({ stick = false } = {}) {
   const box = $('#messages')
   const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 90
   const oldTop = box.scrollTop
+  closeReactPicker() // menü, yeniden çizilen düğmeye bağlıydı
   box.textContent = ''
   const list = S.history.get(S.view) || []
   if (!list.length) {
@@ -806,20 +895,32 @@ function renderMessages({ stick = false } = {}) {
     if (newDay) box.append(h('div', { class: 'day-sep', role: 'separator' }, h('span', { text: dayLabel(m.ts) })))
     const grouped = !newDay && prev.name === m.name && m.ts - prev.ts < 5 * 60e3
     const mine = keyName(m.name) === S.key
-    const del = (isAdmin() || mine) ? h('button', { class: 'icon-btn del', 'aria-label': 'Mesajı sil', title: mine ? 'Mesajını sil' : 'Mesajı sil', html: ico('x'), onclick: () => deleteMessage(m) }) : null
+    const reactBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Tepki ver', title: 'Tepki ver', html: ico('smile') })
+    reactBtn.addEventListener('click', e => { e.stopPropagation(); openReactPicker(m, reactBtn) })
+    const del = (isAdmin() || mine) ? h('button', { class: 'icon-btn del', type: 'button', 'aria-label': 'Mesajı sil', title: mine ? 'Mesajını sil' : 'Mesajı sil', html: ico('x'), onclick: () => deleteMessage(m) }) : null
+    const tools = h('div', { class: 'tools' }, reactBtn, del)
     const gutter = grouped
       ? h('div', { class: 'gutter' }, h('small', { text: fmtTime(m.ts) }))
       : h('div', { class: 'gutter' }, avatar(m.name, null))
     const body = h('div', { class: 'body' }, m.text ? linkify(m.text) : null, m.img ? chatImage(m) : null)
+    const reacts = reactRow(m)
     const content = grouped
-      ? h('div', {}, body)
+      ? h('div', {}, body, reacts)
       : h('div', {},
         h('div', { class: 'head' },
           h('span', { class: 'who', text: m.name }),
           isAdminName(m.name) ? h('span', { class: 'badge', text: 'Yönetici' }) : null,
           h('time', { text: fmtTime(m.ts) })),
-        body)
-    box.append(h('div', { class: 'msg' + (grouped ? '' : ' first') }, gutter, content, del))
+        body, reacts)
+    const row = h('div', { class: 'msg' + (grouped ? '' : ' first') }, gutter, content, tools)
+    // dokunmatik ekranda fare üzerine gelme olmadığı için mesaja dokununca araçlar açılır
+    row.addEventListener('click', e => {
+      if (!matchMedia('(hover: none)').matches || e.target.closest('a, button, .chat-img')) return
+      const open = row.classList.contains('show-tools')
+      for (const r of box.querySelectorAll('.msg.show-tools')) r.classList.remove('show-tools')
+      if (!open) row.classList.add('show-tools')
+    })
+    box.append(row)
     prev = m
   }
   box.dataset.stuck = (stick || nearBottom) ? '1' : '0'
@@ -1699,6 +1800,15 @@ function renderVoiceBar() {
   }
 }
 
+// Yazı kutusu içeriğe göre büyür (en fazla 8 satır kadar), sonra kendi içinde kayar
+const INPUT_MAX_PX = 164
+function autosizeInput() {
+  const el = $('#msgInput')
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, INPUT_MAX_PX) + 'px'
+  keepBottom() // yazı kutusu büyüyünce mesaj alanı küçülür; en alttaysan en altta kal
+}
+
 function renderHeader() {
   const locked = adminOnly.has(S.view) && !isAdmin()
   $('#chIcon').innerHTML = ico('hash')
@@ -2023,6 +2133,7 @@ async function boot(me) {
   A.mdel = lobby.makeAction('mdel')
   A.cmd = lobby.makeAction('cmd')
   A.avtr = lobby.makeAction('avtr')
+  A.react = lobby.makeAction('react')
 
   A.presence.onMessage = (d, { peerId }) => onPresence(d, peerId)
   A.chat.onMessage = (d, { peerId }) => {
@@ -2046,6 +2157,12 @@ async function boot(me) {
   A.avtr.onMessage = (d, { peerId }) => {
     if (!S.peers.get(peerId)?.ready || avPing) return
     avPing = setTimeout(() => { avPing = 0; dirAt = 0; refreshDir() }, 1500)
+  }
+
+  // biri tepki verdi: liste (en fazla 0,8 sn'de bir) sunucudan tazelenir; gerçek veri her zaman sunucudadır
+  A.react.onMessage = (d, { peerId }) => {
+    if (!S.peers.get(peerId)?.ready || reactPing) return
+    reactPing = setTimeout(() => { reactPing = 0; loadMessages() }, 800)
   }
 
   lobby.onPeerJoin = id => {
@@ -2115,6 +2232,7 @@ function showApp() {
   $('#serverVer').textContent = CONFIG.version ? 'v' + CONFIG.version : ''
   renderHeader()
   renderMe()
+  autosizeInput()
 }
 
 // Giriş ve (gerekiyorsa) davet kodu sonrası ortak başlangıç
@@ -2127,7 +2245,8 @@ async function start(me) {
   broadcastPresence()
   updateNet()
   renderAll()
-  renderMessages()
+  // sohbet her zaman en altta (en yeni mesajda) açılır. Mesajlar uygulama gizliyken çizilmiş olabilir, o yüzden zorla.
+  renderMessages({ stick: true })
 }
 
 // Hesabı açık ama henüz sunucuya girmemiş (üye olmayan) kullanıcı: davet kodu ekranı
@@ -2500,12 +2619,22 @@ function wire() {
     sending = true
     try {
       if (await sendMessage(text, pending)) {
-        if (input.value === text) input.value = ''
+        if (input.value === text) { input.value = ''; autosizeInput() }
         clearPending()
       }
     } finally {
       sending = false
     }
+  })
+
+  // yazı kutusu çok satırlıdır: Enter gönderir, Shift+Enter yeni satır açar. Dokunmatik cihazda Enter yeni satırdır (gönder düğmesi var).
+  const msgInput = $('#msgInput')
+  msgInput.addEventListener('input', autosizeInput)
+  msgInput.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return
+    if (matchMedia('(pointer: coarse)').matches) return
+    e.preventDefault()
+    $('#composer').requestSubmit()
   })
 
   // görsel ekleme: düğme, yapıştırma (Ctrl+V) ve sürükle-bırak
@@ -2527,7 +2656,11 @@ function wire() {
   $('#messages').addEventListener('scroll', e => {
     const b = e.target
     b.dataset.stuck = b.scrollHeight - b.scrollTop - b.clientHeight < 90 ? '1' : '0'
+    closeReactPicker()
   })
+  document.addEventListener('click', e => { if (reactPicker && !e.target.closest('.react-picker')) closeReactPicker() })
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeReactPicker() })
+  addEventListener('resize', closeReactPicker)
   $('#imgDlg').addEventListener('click', () => $('#imgDlg').close())
 
   // ekran paylaşımı: başlatma penceresi
