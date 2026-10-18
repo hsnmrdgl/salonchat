@@ -1710,7 +1710,8 @@ function renderChannels() {
 }
 
 function renderMembers() {
-  const people = roster()
+  // dışarıda ve meşgul olanlar listenin sonunda; kendi içlerinde alfabetik sıra korunur
+  const people = roster().sort((a, b) => (statusId(a.status) !== 'online') - (statusId(b.status) !== 'online'))
   $('#memberTitle').textContent = 'Çevrimiçi (' + people.length + ')'
   $('#emptyHint').hidden = people.length > 1 || S.dir.size > 2 // 2'den fazla kayıtlı kullanıcı varsa ipucu gösterilmez
   const ul = $('#memberList')
@@ -1780,15 +1781,13 @@ function renderVoiceBar() {
   bar.hidden = !S.voice
   if (!S.voice) return
   const people = roster()
-  const n = people.filter(p => p.ch === S.voice.ch).length
-  $('#vbTitle').textContent = 'Ses bağlı'
-  $('#vbSub').textContent = chanName(S.voice.ch) + ', ' + n + ' kişi'
+  $('#vbTitle').textContent = chanName(S.voice.ch) + ' kanalına bağlandı'
 
   // ekran paylaşımı: paylaşan kendi yayınını önizler, diğerleri izler
   const sharer = people.find(p => p.ch === S.voice.ch && p.share && !p.self) || null
   const wb = $('#watchBtn')
   wb.hidden = !S.share && !sharer
-  if (S.share) wb.textContent = S.watch?.self ? 'Önizlemeyi aç' : 'Yayınımı izle'
+  if (S.share) wb.textContent = 'Yayından çık'
   else if (sharer) wb.textContent = S.watch?.id === sharer.id ? 'Yayını aç' : 'İzle: ' + sharer.name
   $('#voiceBar .vb-actions').hidden = wb.hidden
   const info = $('#shareInfo')
@@ -2086,20 +2085,15 @@ function joinProblem() {
 }
 
 const bootTime = Date.now()
+let relayWarned = false
 function updateNet() {
-  const el = $('#netState')
+  // Bağlantı durumu artık başlıkta gösterilmez; yalnızca uzun süre röleye ulaşılamazsa bir kez uyarılır
   let relays = 1 // getRelaySockets yoksa bağlı varsay
   if (typeof T.getRelaySockets === 'function') {
     try { relays = Object.values(T.getRelaySockets()).filter(s => s.readyState === 1).length } catch { /* yoksay */ }
   }
-  const others = [...S.peers.values()].filter(p => p.ready).length
-  let cls = ''
-  let label = 'Bağlanıyor'
-  if (relays > 0) cls = 'ok' // bağlıyken yazı yok, yalnızca yeşil nokta
-  else if (Date.now() - bootTime > 15000) { cls = 'bad'; label = 'Röleye ulaşılamıyor' }
-  el.className = 'net ' + cls
-  el.title = label || (cls === 'ok' ? 'Bağlı' : 'Bağlantı durumu')
-  $('span', el).textContent = label
+  if (relays > 0) relayWarned = false
+  else if (!relayWarned && Date.now() - bootTime > 15000) { relayWarned = true; toast('Röleye ulaşılamıyor, bağlantı kurulamıyor.', 'err') }
 }
 
 function openSide() { $('#side').classList.add('open'); $('#scrim').hidden = false }
@@ -2677,7 +2671,7 @@ function wire() {
 
   // ekran paylaşımı: izleme paneli
   $('#watchBtn').addEventListener('click', () => {
-    if (S.share) return openSelfWatch()
+    if (S.share) return stopShare()
     const other = S.voice && sharerIn(S.voice.ch)
     if (other && !other.self) openWatch(other.id)
   })
