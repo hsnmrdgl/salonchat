@@ -185,6 +185,8 @@ const ERR = {
   bad_invite: 'Davet kodu yanlış ya da daha önce kullanılmış.',
   not_admin: 'Bu işlem için yönetici olmalısın.',
   try_again: 'Kod üretilemedi, tekrar dene.',
+  too_new: 'Davet kodu üretebilmek için hesabının en az 7 günlük olması gerekir.',
+  invite_limit: 'Aynı anda en fazla 2 kullanılmamış kodun olabilir. Birinin kullanılmasını ya da süresinin dolmasını bekle.',
   invalid_name: NEW_NAME_RULE,
   weak_password: 'Şifre 6-72 karakter olmalı.',
   invalid_key: 'Kimlik anahtarı oluşturulamadı. Sayfayı yenileyip tekrar dene.',
@@ -2424,28 +2426,50 @@ async function adminRpc(fn, args) {
   return res
 }
 
+// Pencere iki modda açılır: yönetici ayarlarından "hepsi" (invAll), sağ paneldeki "Davet et" düğmesinden yalnızca kendi kodların.
+let invAll = false
+const fmtLeft = ms => {
+  const m = Math.max(0, Math.floor((ms - Date.now()) / 60000))
+  return m >= 60 ? Math.floor(m / 60) + ' sa ' + (m % 60) + ' dk' : Math.max(1, m) + ' dk'
+}
+
 async function loadInvites() {
   invError('')
-  let list
-  try { list = (await adminRpc('salon_invites')).list } catch (e) {
+  let res
+  try { res = await adminRpc(invAll ? 'salon_invites' : 'salon_my_invites') } catch (e) {
     return invError(e instanceof AuthError ? e.message : 'Kodlar yüklenemedi.')
   }
-  if (!Array.isArray(list)) list = []
+  const list = Array.isArray(res.list) ? res.list : []
   const ul = $('#invList')
   ul.textContent = ''
   $('#invEmpty').hidden = list.length > 0
+  $('#invEmpty').textContent = invAll ? 'Henüz davet kodu yok.' : 'Şu an geçerli bir kodun yok.'
+  if (!invAll) {
+    // üretme hakkı: yeni üyeler beklemeli, ayrıca aynı anda en fazla 2 kod
+    const days = Number(res.days) || 0
+    $('#invNew').disabled = days > 0 || Number(res.left) <= 0
+    $('#invQuota').textContent = days > 0 ? 'Kod üretebilmek için hesabının 7 günlük olması gerekir. Kalan: ' + days + ' gün.'
+      : Number(res.left) >= 99 ? '' : 'Üretebileceğin kod hakkı: ' + Math.max(0, Number(res.left)) + ' / 2'
+  }
   for (const i of list) {
     const code = str(i.code, 8)
-    ul.append(h('li', { class: 'inv' + (i.used ? ' used' : '') },
+    const exp = Number(i.exp) > 0 ? Number(i.exp) : 0
+    const dead = !i.used && i.expired
+    let sub
+    if (i.used) sub = 'Kullanan: ' + (i.by || 'silinmiş hesap')
+    else if (dead) sub = 'Süresi doldu'
+    else sub = exp ? fmtLeft(exp) + ' geçerli' : 'Süresiz'
+    if (invAll && i.cb) sub = 'Oluşturan: ' + i.cb + ' · ' + sub
+    ul.append(h('li', { class: 'inv' + (i.used || dead ? ' used' : '') },
       h('div', { class: 'info' },
         h('span', { class: 'code', text: fmtCode(code) }),
-        h('small', { text: i.used ? 'Kullanan: ' + (i.by || 'silinmiş hesap') : fmtDate(i.ts) + ' tarihinde oluşturuldu' })),
-      i.used ? null : h('button', {
+        h('small', { text: sub })),
+      (i.used || dead) ? null : h('button', {
         type: 'button', class: 'icon-btn', title: 'Kodu kopyala', 'aria-label': 'Kodu kopyala', html: ico('copy'),
         onclick: async () => { const ok = await copyText(fmtCode(code)); toast(ok ? 'Kod kopyalandı.' : 'Kopyalanamadı, kodu elle seçip kopyala.', ok ? '' : 'err') }
       }),
       h('button', {
-        type: 'button', class: 'icon-btn danger', title: i.used ? 'Kaydı sil' : 'Kodu sil', 'aria-label': i.used ? 'Kaydı sil' : 'Kodu sil', html: ico('trash'),
+        type: 'button', class: 'icon-btn danger', title: (i.used || dead) ? 'Kaydı sil' : 'Kodu sil', 'aria-label': (i.used || dead) ? 'Kaydı sil' : 'Kodu sil', html: ico('trash'),
         onclick: () => deleteInvite(i.id)
       })))
   }
@@ -2462,13 +2486,13 @@ async function newInvite() {
     const code = fmtCode(str(res.code, 8))
     const copied = await copyText(code)
     toast(copied ? 'Kod oluşturuldu ve kopyalandı: ' + code : 'Kod oluşturuldu: ' + code)
-    await loadInvites()
   } catch (e) {
     invError(e instanceof AuthError ? e.message : 'Kod oluşturulamadı.')
   } finally {
     invBusy = false
     $('#invNew').disabled = false
   }
+  await loadInvites() // kota bilgisi ve düğme durumu sunucudan yeniden okunur
 }
 
 async function deleteInvite(id) {
@@ -2480,11 +2504,21 @@ async function deleteInvite(id) {
   }
 }
 
-function openInvites() {
-  if (!isAdmin()) return
-  $('#settingsDlg').close()
+function showInvDlg(all) {
+  invAll = all
+  $('#invTitle').textContent = all ? 'Tüm davet kodları' : 'Davet et'
+  $('#invNote').textContent = all
+    ? 'Herkesin oluşturduğu kodlar. Yeni kodlar 24 saat geçerlidir ve bir kez kullanılabilir.'
+    : 'Arkadaşına bu kodu ver. Kod 24 saat geçerlidir ve bir kez kullanılabilir.'
+  $('#invQuota').textContent = ''
+  $('#invNew').disabled = false
   $('#invDlg').showModal()
   loadInvites()
+}
+function openInvites() { // yönetici: ayarlardan herkesin kodları
+  if (!isAdmin()) return
+  $('#settingsDlg').close()
+  showInvDlg(true)
 }
 
 /* ---- Şifre sıfırlama kodu (yönetici) ---- */
@@ -2932,6 +2966,7 @@ function wire() {
     toast(ok ? 'Kod kopyalandı.' : 'Kopyalanamadı, kodu elle seçip kopyala.', ok ? '' : 'err')
   })
   $('#invNew').addEventListener('click', newInvite)
+  $('#inviteOpen').addEventListener('click', () => { closeDrawers(); showInvDlg(false) })
 
   $('#udVol').addEventListener('input', e => {
     const v = Number(e.target.value)
