@@ -261,16 +261,28 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .stage-body { position: relative; flex: 1; min-height: 0; background: #000; }
 .stage-body video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
 .stage-wait { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+/* Yayın kontrolleri: ekranın alt ortasında, aşağıdan hafifçe yükselerek belirir */
+.stage-bar {
+  position: absolute; left: 50%; bottom: 18px; z-index: 3;
+  display: flex; align-items: center; gap: 4px; padding: 6px;
+  background: rgba(18, 14, 32, .84); backdrop-filter: blur(8px);
+  border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+  opacity: 0; transform: translate(-50%, 16px); pointer-events: none;
+  transition: opacity .2s ease, transform .24s cubic-bezier(.2, .8, .3, 1);
+}
+.stage.show-bar .stage-bar, .stage-bar:focus-within { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.stage-bar .btn.small { margin-left: 2px; }
 .stage-foot { display: flex; align-items: center; gap: 10px; flex: none; padding: 8px 14px; border-top: 1px solid var(--line); }
 .stage-foot input[type="range"] { width: 180px; padding: 0; accent-color: var(--accent); }
 .stage:fullscreen { background: #000; }
 
 /* Küçük pencere: sohbeti okurken yayın köşede devam eder */
 .stage.mini { position: fixed; inset: auto 16px 86px auto; z-index: 15; width: min(360px, calc(100vw - 32px)); aspect-ratio: 16 / 9; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: 0 12px 40px rgba(0, 0, 0, .55); }
-.stage.mini .stage-foot, .stage.mini .stage-head strong, .stage.mini .stage-head small { display: none; }
-.stage.mini .stage-head { position: absolute; top: 0; left: 0; right: 0; z-index: 2; height: auto; padding: 4px 4px 4px 10px; border: 0; background: linear-gradient(rgba(0, 0, 0, .65), transparent); opacity: 0; transition: opacity .15s; }
-.stage.mini:hover .stage-head, .stage.mini:focus-within .stage-head { opacity: 1; }
+.stage.mini .stage-foot, .stage.mini .stage-head { display: none; }
 .stage.mini .stage-body { height: 100%; }
+.stage.mini .stage-bar { bottom: 8px; padding: 3px; gap: 2px; border-radius: 12px; }
+.stage.mini .stage-bar .icon-btn { width: 30px; height: 30px; }
 .stage.mini video { cursor: pointer; }
 
 /* ---------- Üyeler ---------- */
