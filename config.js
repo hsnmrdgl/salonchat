@@ -14,7 +14,7 @@ export default {
   serverName: 'Salon',
 
   // Sol üstte adın yanında küçük yazıyla görünen sürüm. Her güncellemede elle artır.
-  version: '1.9.0',
+  version: '1.10.0',
 
   // Kanallar. id'ler sabit kalmalı, name istediğin gibi olabilir.
   // adminOnly: true olan metin kanalına sadece yöneticiler yazabilir.
