@@ -178,6 +178,12 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .vb-row { display: flex; align-items: center; gap: 8px; }
 .vb-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .vb-share { font-size: 12px; color: var(--muted); }
+.vb-share-row { display: flex; align-items: center; gap: 6px; }
+.vb-share-row .vb-share { flex: 1; min-width: 0; }
+.vb-share-row .icon-btn { width: 32px; height: 32px; }
+.vb-share-row .icon-btn svg { width: 17px; height: 17px; }
+.icon-btn.danger.solid { background: var(--danger); color: #fff; }
+.icon-btn.danger.solid:hover { background: color-mix(in srgb, var(--danger) 82%, white); color: #fff; }
 .btn.small { padding: 6px 11px; font-size: 13px; border-radius: 8px; }
 .warn { margin-top: 12px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--talk) 14%, transparent); color: var(--talk); font-size: 13px; }
 .me .icon-btn { width: 34px; height: 34px; }
@@ -300,7 +306,18 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
   transition: opacity .2s ease, transform .24s cubic-bezier(.2, .8, .3, 1);
 }
 .stage.show-bar .stage-bar, .stage-bar:focus-within { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
-.stage-bar .btn.small { margin-left: 2px; }
+.stage-bar .icon-btn { width: 46px; height: 46px; }
+.stage-bar .icon-btn svg { width: 25px; height: 25px; }
+.stage-bar .btn.small { margin-left: 2px; white-space: nowrap; padding: 12px 16px; font-size: 15px; border-radius: 10px; }
+.stage:fullscreen .stage-bar { bottom: 36px; padding: 8px; gap: 6px; border-radius: 18px; }
+.stage:fullscreen .stage-bar .icon-btn { width: 60px; height: 60px; }
+.stage:fullscreen .stage-bar .icon-btn svg { width: 32px; height: 32px; }
+.stage:fullscreen .stage-bar .btn.small { padding: 17px 22px; font-size: 18px; border-radius: 12px; }
+.stage-up { margin-left: auto; }
+.stage-viewers { position: absolute; right: 14px; bottom: 14px; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: rgba(18, 14, 32, .72); backdrop-filter: blur(6px); color: #fff; font-size: 13px; font-weight: 600; pointer-events: none; }
+.stage-viewers svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; display: block; }
+.stage:fullscreen .stage-viewers { right: 24px; bottom: 24px; font-size: 16px; padding: 7px 14px; }
+.stage:fullscreen .stage-viewers svg { width: 20px; height: 20px; }
 .stage-foot { display: flex; align-items: center; gap: 10px; flex: none; padding: 8px 14px; border-top: 1px solid var(--line); }
 .stage-foot input[type="range"] { width: 180px; padding: 0; accent-color: var(--accent); }
 .stage:fullscreen { background: #000; }
@@ -311,6 +328,9 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .stage.mini .stage-body { height: 100%; }
 .stage.mini .stage-bar { bottom: 8px; padding: 3px; gap: 2px; border-radius: 12px; }
 .stage.mini .stage-bar .icon-btn { width: 30px; height: 30px; }
+.stage.mini .stage-bar .icon-btn svg { width: 17px; height: 17px; }
+.stage.mini .stage-viewers { right: 8px; bottom: 8px; padding: 3px 8px; font-size: 11px; }
+.stage.mini .stage-bar .btn.small { padding: 5px 9px; font-size: 12px; }
 .stage.mini video { cursor: pointer; }
 
 /* ---------- Üyeler ---------- */
