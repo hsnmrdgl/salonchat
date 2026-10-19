@@ -54,7 +54,11 @@ const ICONS = {
   speaker: svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>'),
   speakerOff: svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" x2="17" y1="9" y2="15"/><line x1="17" x2="23" y1="9" y2="15"/>'),
   image: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>'),
+  eye: svg('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'),
+  eyeOff: svg('<path d="M9.9 4.2A10 10 0 0 1 12 4c6.4 0 10 8 10 8a17 17 0 0 1-2.6 3.8M6.6 6.6A16 16 0 0 0 2 12s3.6 8 10 8a10 10 0 0 0 5.4-1.6"/><path d="M14.1 14.1a3 3 0 1 1-4.2-4.2"/><line x1="2" x2="22" y1="2" y2="22"/>'),
   screenStop: svg('<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/><line x1="9" x2="15" y1="7" y2="13"/><line x1="15" x2="9" y1="7" y2="13"/>'),
+  play: svg('<polygon points="6 3 20 12 6 21 6 3"/>'),
+  pause: svg('<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>'),
   screen: svg('<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>'),
   expand: svg('<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/>'),
   pip: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><rect x="11" y="12" width="8" height="6" rx="1"/>'),
@@ -1870,28 +1874,40 @@ function renderVoiceBar() {
   bar.hidden = !S.voice
   if (!S.voice) return
   const people = roster()
-  $('#vbTitle').textContent = chanName(S.voice.ch) + ' bağlı'
+  $('#vbTitle').textContent = 'Bağlı: ' + chanName(S.voice.ch)
 
-  // ekran paylaşımı: paylaşan kendi yayınını önizler, diğerleri izler
+  // ekran paylaşımı: başkasının yayınını izleyen düğme (metinli) ve kendi yayınım için satır (simgeli)
   const sharer = people.find(p => p.ch === S.voice.ch && p.share && !p.self) || null
   const wb = $('#watchBtn')
-  // paylaşan kişi: "Yayına katıl" (kendi yayınını izler, zaten izliyorsa gizli) + "Yayından çık"; diğerleri: İzle
-  wb.hidden = S.share ? !!S.watch?.self : !sharer
-  const lb = $('#leaveShareBtn')
-  lb.hidden = !S.share
-  lb.title = lb.ariaLabel = 'Paylaşımı durdur'
-  wb.classList.toggle('danger', !S.share && !!sharer && S.watch?.id === sharer.id) // izlerken kırmızı "Yayını kapat"
-  wb.classList.toggle('primary', !wb.classList.contains('danger'))
-  if (S.share) wb.textContent = 'Yayına katıl'
-  else if (sharer) wb.textContent = S.watch?.id === sharer.id ? 'Yayını kapat' : 'İzle: ' + sharer.name
-  $('#voiceBar .vb-actions').hidden = wb.hidden && lb.hidden
-  const info = $('#shareInfo')
-  info.hidden = !S.share
+  wb.hidden = !!S.share || !sharer
+  const watching = !!sharer && S.watch?.id === sharer.id
+  wb.classList.toggle('danger', watching) // izlerken kırmızı "Yayını kapat"
+  wb.classList.toggle('primary', !watching)
+  if (sharer) wb.textContent = watching ? 'Yayını kapat' : 'İzle: ' + sharer.name
+  $('#voiceBar .vb-actions').hidden = wb.hidden
+
+  const row = $('#shareRow')
+  row.hidden = !S.share
   if (S.share) {
-    const k = S.share.viewers.size
-    const mbps = (SHARE_Q[S.share.q].kbps * k) / 1000
-    info.textContent = 'Ekranını paylaşıyorsun (' + SHARE_Q[S.share.q].label + ') · ' + k + ' izleyen' + (k ? ' · ~' + mbps.toFixed(1) + ' Mbps yükleme' : '')
+    const on = !!S.watch?.self
+    const sw = $('#selfWatchBtn')
+    sw.innerHTML = ico(on ? 'eyeOff' : 'eye')
+    sw.title = on ? 'Yayından ayrıl' : 'Yayına katıl'
+    sw.setAttribute('aria-label', sw.title)
   }
+  renderShareStats()
+}
+
+// Yükleme hızı yayın ekranının başlığında (sağda), izleyen sayısı sağ altta görünür; yalnızca paylaşan kişinin kendi yayınında
+function renderShareStats() {
+  const own = !!(S.watch?.self && S.share)
+  $('#stageUp').hidden = !own
+  $('#stageViewers').hidden = !own
+  if (!own) return
+  const k = S.share.viewers.size
+  const mbps = (SHARE_Q[S.share.q].kbps * k) / 1000
+  $('#stageUp').textContent = (k ? '~' + mbps.toFixed(1) : '0') + ' Mbps yükleme'
+  $('#stageViewersN').textContent = k + ' izleyen'
 }
 
 // Yazı kutusu içeriğe göre büyür (en fazla 8 satır kadar), sonra kendi içinde kayar
@@ -2853,8 +2869,9 @@ function wire() {
   })
 
   // ekran paylaşımı: izleme paneli
+  $('#selfWatchBtn').addEventListener('click', () => { if (S.watch?.self) closeWatch(); else openSelfWatch() })
   $('#watchBtn').addEventListener('click', () => {
-    if (S.share) return openSelfWatch()
+    if (S.share) return
     const other = S.voice && sharerIn(S.voice.ch)
     if (!other || other.self) return
     if (S.watch?.id === other.id) closeWatch() // izliyorsan düğme "Yayını kapat" olur
