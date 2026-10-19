@@ -97,9 +97,12 @@
       </div>
       <div class="vb-actions" hidden>
         <button type="button" id="watchBtn" class="btn small primary" hidden>İzle</button>
-        <button type="button" id="leaveShareBtn" class="icon-btn danger" aria-label="Paylaşımı durdur" title="Paylaşımı durdur" data-icon="screenStop" hidden></button>
       </div>
-      <p id="shareInfo" class="vb-share" hidden></p>
+      <div id="shareRow" class="vb-share-row" hidden>
+        <p id="shareInfo" class="vb-share">Ekran paylaşıyorsun</p>
+        <button type="button" id="selfWatchBtn" class="icon-btn" aria-label="Yayına katıl" title="Yayına katıl" data-icon="eye"></button>
+        <button type="button" id="leaveShareBtn" class="icon-btn danger solid" aria-label="Paylaşımı durdur" title="Paylaşımı durdur" data-icon="screenStop"></button>
+      </div>
     </div>
 
     <div class="controls">
@@ -152,10 +155,12 @@
         <span class="live-dot" aria-hidden="true"></span>
         <strong id="stageTitle"></strong>
         <small id="stageInfo"></small>
+        <small id="stageUp" class="stage-up" hidden></small>
       </header>
       <div class="stage-body">
         <video id="stageVideo" autoplay playsinline></video>
         <p id="stageWait" class="stage-wait">Bağlanıyor…</p>
+        <div id="stageViewers" class="stage-viewers" hidden><span data-icon="eye" aria-hidden="true"></span><span id="stageViewersN"></span></div>
         <!-- Yayın kontrolleri: fare yayının üzerinde hareket edince alttan belirir, 3 sn hareketsizlikte kaybolur -->
         <div id="stageBar" class="stage-bar" role="toolbar" aria-label="Yayın kontrolleri">
           <button type="button" id="stageMini" class="icon-btn" aria-label="Pencere modu" title="Pencere modu" data-icon="pip"></button>
