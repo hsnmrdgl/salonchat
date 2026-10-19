@@ -682,7 +682,7 @@ function chatImage(m) {
     const im = h('img', { src: url, alt: 'Gönderilen görsel' })
     im.addEventListener('load', keepBottom)
     if (m.img === 'image/gif') wireGif(im, m.id, url)
-    wrap.append(im)
+    wrap.append(im, h('span', { class: 'zoom', 'aria-hidden': 'true', html: ico('expand') })) // fareyle üzerine gelince beliren büyüt simgesi
   }
   wrap.addEventListener('click', () => { const u = S.imgs.get(m.id); if (u) openImage(u) })
   const cached = S.imgs.get(m.id)
