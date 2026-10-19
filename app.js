@@ -11,7 +11,7 @@ const SUPABASE_URL = 'https://esm.run/@supabase/supabase-js@2.115.0'
 const APP_ID = (() => { try { return 'salon-' + new URL(CONFIG.supabaseUrl).hostname.split('.')[0] } catch { return 'salon' } })()
 
 /* ------------------------------------------------------------------ */
-/* Yardımcılar                                                         */
+/* Yardımcılar  anıl reis                                                        */
 /* ------------------------------------------------------------------ */
 
 const $ = (sel, root = document) => root.querySelector(sel)
