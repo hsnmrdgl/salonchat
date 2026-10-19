@@ -269,8 +269,12 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .attach-bar img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; background: var(--bg); }
 .attach-bar img:not([src]) { visibility: hidden; }
 .attach-bar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; }
-.chat-img { display: block; margin-top: 6px; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; cursor: zoom-in; color: var(--muted); font-size: 13px; max-width: min(100%, 420px); }
+.chat-img { display: block; margin-top: 6px; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; cursor: default; position: relative; color: var(--muted); font-size: 13px; max-width: min(100%, 420px); }
 .chat-img img { display: block; max-width: 100%; max-height: 320px; margin: 0 auto; }
+.chat-img .zoom { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: rgba(12, 11, 24, .72); color: #fff; opacity: 0; transform: scale(.9); transition: opacity .12s ease, transform .12s ease; pointer-events: none; backdrop-filter: blur(4px); }
+.chat-img .zoom svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chat-img:hover .zoom, .chat-img:focus-visible .zoom { opacity: 1; transform: none; }
+@media (hover: none) { .chat-img .zoom { opacity: .85; transform: none; } }
 .chat-img.loading { padding: 36px 18px; cursor: default; }
 .lightbox { padding: 0; border: 0; background: transparent; max-width: 96vw; max-height: 96vh; overflow: visible; }
 .lightbox::backdrop { background: rgba(8, 6, 16, .86); }
@@ -373,9 +377,33 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .field { margin-top: 16px; }
 .field > label { display: block; font-weight: 600; margin-bottom: 6px; }
 .field.check { display: flex; align-items: center; gap: 10px; }
-.field.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.field.check input { width: 18px; height: 18px; }
 .field.check label { margin: 0; }
-input[type="range"] { padding: 0; accent-color: var(--accent); }
+/* Kaydırıcı ve onay kutusu: Opera gibi tarayıcılar accent-color'u yok sayıp beyaz çubuk çizdiği için hepsi elle çizilir */
+input[type="range"] { -webkit-appearance: none; appearance: none; padding: 0; height: 20px; border: 0; background: transparent; cursor: pointer; accent-color: var(--accent); }
+input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: var(--raise); border: 1px solid var(--line); }
+input[type="range"]::-moz-range-track { height: 6px; border-radius: 999px; background: var(--raise); border: 1px solid var(--line); }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: var(--accent); border: 2px solid var(--side); box-shadow: 0 0 0 1px var(--accent); }
+input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid var(--side); box-shadow: 0 0 0 1px var(--accent); }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+input[type="range"]:disabled { opacity: .5; cursor: not-allowed; }
+input[type="checkbox"] { -webkit-appearance: none; appearance: none; flex: none; width: 18px; height: 18px; padding: 0; margin: 0; border-radius: 5px; border: 1.5px solid var(--faint); background: var(--bg); cursor: pointer; display: inline-grid; place-content: center; }
+input[type="checkbox"]::after { content: ""; width: 10px; height: 10px; transform: scale(0); transition: transform .1s ease; background: var(--accent-ink, #14122b); clip-path: polygon(14% 52%, 0 66%, 40% 100%, 100% 22%, 86% 8%, 40% 72%); }
+input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"]:checked::after { transform: scale(1); }
+input[type="checkbox"]:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 2px; }
+input[type="checkbox"]:disabled { opacity: .5; cursor: not-allowed; }
+select { -webkit-appearance: none; appearance: none; padding-right: 34px; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a86a8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 16px; }
+select option { background: var(--surface); color: var(--text); }
+
+/* Kaydırma çubukları: Firefox / yeni Chromium (scrollbar-*) ve eski Chromium, Opera (::-webkit-scrollbar) */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--faint) 55%, transparent) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--faint) 45%, transparent); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--faint) 75%, transparent); background-clip: content-box; }
+*::-webkit-scrollbar-corner { background: transparent; }
 .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .row.end { justify-content: space-between; margin-top: 22px; }
 .admin-actions { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
