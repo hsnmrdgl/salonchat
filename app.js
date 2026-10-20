@@ -1381,49 +1381,150 @@ const SHARE_Q = {
   '720p30': { label: '720p 30 fps', w: 1280, h: 720, fps: 30, kbps: 2500, hint: 'detail' }
 }
 const isShareQ = k => typeof k === 'string' && Object.hasOwn(SHARE_Q, k)
+// Yayın türü: 'motion' (oyun, video) bilgisayar yetmeyince çözünürlüğü düşürüp akıcılığı korur; 'detail' (belge, kod) tersini yapar.
+const SHARE_MODES = { motion: { hint: 'motion', degr: 'maintain-framerate' }, detail: { hint: 'detail', degr: 'maintain-resolution' } }
+const isShareMode = k => typeof k === 'string' && Object.hasOwn(SHARE_MODES, k)
+// Otomatik kalite düşürme basamakları (işlemci yüküne göre azalan): akıcı modda kare hızı, net modda çözünürlük korunur
+const SHARE_LOWER = {
+  motion: { '1080p60': '720p60', '720p60': '720p30', '1080p30': '720p30' },
+  detail: { '1080p60': '1080p30', '1080p30': '720p30', '720p60': '720p30' }
+}
 const sharerIn = ch => roster().find(p => p.ch === ch && p.share) || null
 
 let stageVol = (() => { const n = Number(LS.get('stageVol', 1)); return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1 })()
 let stageMuted = false
 const IDLE_SHARE_MS = 15 * 60 * 1000 // izleyen yokken paylaşım en fazla bu kadar açık kalır
 
+// Kodek tercihi: tarayıcılar varsayılan olarak VP8 (yazılım kodlaması) ile başlar; 1080p60'ta bu işlemciyi boğar ve kare düşürür.
+// H.264 çoğu ekran kartında donanımla kodlanır, bu yüzden oyun oynarken bile işlemciyi yormaz. Paylaşım videosunun
+// bağlantıya eklendiği anda (görüşme kurulmadan önce) kodek sırası değiştirilir.
+let codecHook = false
+let codecTrack = null
+let codecPref = 'auto'
+function orderedCodecs(pref) {
+  const caps = globalThis.RTCRtpSender?.getCapabilities?.('video')?.codecs
+  if (!caps?.length) return null
+  const order = pref === 'vp9' ? ['video/VP9', 'video/H264', 'video/VP8']
+    : pref === 'vp8' ? ['video/VP8', 'video/H264', 'video/VP9']
+      : ['video/H264', 'video/VP8', 'video/VP9'] // otomatik: H.264 yoksa en hafif yazılım kodeği VP8
+  const rank = c => { const i = order.indexOf(c.mimeType); return i < 0 ? 99 : i } // rtx/red/fec gibi yardımcılar sona
+  return [...caps].sort((a, b) => rank(a) - rank(b))
+}
+function installCodecHook() {
+  if (codecHook || typeof RTCPeerConnection === 'undefined') return
+  codecHook = true
+  const proto = RTCPeerConnection.prototype
+  const orig = proto.addTrack
+  proto.addTrack = function (track, ...streams) {
+    const sender = orig.call(this, track, ...streams)
+    if (track && track === codecTrack) {
+      try {
+        const tr = this.getTransceivers().find(t => t.sender === sender)
+        const list = orderedCodecs(codecPref)
+        if (tr?.setCodecPreferences && list) tr.setCodecPreferences(list)
+      } catch (e) { console.warn('kodek tercihi', e) }
+    }
+    return sender
+  }
+}
+
+const senderFor = (sh, id, track) => {
+  const peers = sh.room.getPeers?.()
+  const pc = peers instanceof Map ? peers.get(id) : peers?.[id]
+  const senders = pc?.getSenders?.() || []
+  return senders.find(s => s.track === track) || senders.find(s => s.track?.id === track.id) || null
+}
+
 // Gönderici ayarı: en yüksek bit hızı, kare hızı ve gerekirse çözünürlük küçültme. Tarayıcı bağlantı yetmezse
 // bunun altına kendisi iner; bu ayar yalnızca tavandır.
 async function tuneSender(id) {
   const sh = S.share
   if (!sh || !sh.viewers.has(id)) return false
-  const peers = sh.room.getPeers?.()
-  const pc = peers instanceof Map ? peers.get(id) : peers?.[id]
-  const senders = pc?.getSenders?.() || []
-  const sender = senders.find(s => s.track === sh.track) || senders.find(s => s.track?.id === sh.track.id)
+  const sender = senderFor(sh, id, sh.track)
   if (!sender) return false
   const q = SHARE_Q[sh.q]
   const params = sender.getParameters()
   if (!params.encodings?.length) params.encodings = [{}]
-  // Bant genişliği ya da CPU yetmediğinde çözünürlük yerine kare hızı düşsün (ekran yazıları okunaklı kalır).
-  // Her tarayıcı bu alanı desteklemez; desteklemeyende contentHint = 'detail' aynı yönde çalışır.
-  params.degradationPreference = 'maintain-resolution'
+  // Bant genişliği ya da CPU yetmediğinde ne feda edilsin: akıcı modda çözünürlük düşer, net modda kare hızı düşer.
+  // Her tarayıcı bu alanı desteklemez; desteklemeyende contentHint aynı yönde çalışır.
+  params.degradationPreference = SHARE_MODES[sh.mode].degr
   const enc = params.encodings[0]
   enc.maxBitrate = q.kbps * 1000
   enc.maxFramerate = q.fps
+  enc.priority = 'high'
+  enc.networkPriority = 'high'
   const w = sh.track.getSettings?.().width || 0
   enc.scaleResolutionDownBy = w > q.w ? Math.round((w / q.w) * 100) / 100 : 1
   await sender.setParameters(params)
+  // yayın sesi: konuşma değil müzik/oyun sesi olduğu için daha yüksek bit hızı
+  if (sh.audioTrack) {
+    const as = senderFor(sh, id, sh.audioTrack)
+    if (as) {
+      const ap = as.getParameters()
+      if (!ap.encodings?.length) ap.encodings = [{}]
+      ap.encodings[0].maxBitrate = 128000
+      await as.setParameters(ap).catch(() => {})
+    }
+  }
   return true
 }
 // İzleyici sayısına göre kalite önerisi. Her izleyiciye ayrı kodlama ve yükleme yapıldığı için toplam yükleme
 // (bit hızı x izleyici) bu bütçeyi aşmasın diye en yüksek uygun profil önerilir.
 const SHARE_BUDGET_KBPS = 12000
-const SHARE_ORDER = ['1080p60', '1080p30', '720p60', '720p30'] // bit hızına göre azalan
-const recommendQ = n => SHARE_ORDER.find(k => SHARE_Q[k].kbps * Math.max(1, n) <= SHARE_BUDGET_KBPS) || '720p30'
+const SHARE_ORDER = {
+  motion: ['1080p60', '720p60', '1080p30', '720p30'], // akıcı modda kare hızı çözünürlükten önce korunur
+  detail: ['1080p60', '1080p30', '720p60', '720p30']
+}
+const recommendQ = (n, mode) => (SHARE_ORDER[mode] || SHARE_ORDER.motion).find(k => SHARE_Q[k].kbps * Math.max(1, n) <= SHARE_BUDGET_KBPS) || '720p30'
 
 function suggestQuality(sh) {
   const n = sh.viewers.size
   if (n < 2 || sh.suggestedFor === n) return
-  const rec = recommendQ(n)
+  const rec = recommendQ(n, sh.mode)
   if (SHARE_Q[rec].kbps >= SHARE_Q[sh.q].kbps) return // zaten uygun ya da daha düşük
   sh.suggestedFor = n
-  toast(n + ' kişi izliyor. Yayın takılıyor ya da bulanıklaşıyorsa kaliteyi "' + SHARE_Q[rec].label + '" yap (paylaşım penceresinden).')
+  // Her izleyici için ayrı kodlama yapıldığı için izleyici arttıkça yük de artar
+  if (sh.auto) {
+    toast(n + ' kişi izlediği için yayın kalitesi otomatik "' + SHARE_Q[rec].label + '" yapıldı.')
+    changeShareQuality(rec)
+  } else toast(n + ' kişi izliyor. Yayın takılıyor ya da bulanıklaşıyorsa kaliteyi "' + SHARE_Q[rec].label + '" yap (paylaşım penceresinden).')
+}
+
+// Yayın sağlığı: her 2 sn'de gönderici istatistiği okunur (kodek, donanım/yazılım kodlama, gerçek kare hızı, sınırlayıcı neden).
+// Bilgisayar ya da bağlantı kare hızını hedefin altında tutuyorsa (yaklaşık 8 sn) kalite bir basamak otomatik düşer.
+const isSoftEnc = impl => /openh264|libvpx|libaom|software|ffmpeg|simulcastencoderadapter\((libvpx|openh264)/i.test(impl || '')
+async function pollShare(sh) {
+  if (S.share !== sh) return
+  let worst = null
+  for (const id of sh.viewers) {
+    const s = senderFor(sh, id, sh.track)
+    if (!s) continue
+    let rep
+    try { rep = await s.getStats() } catch { continue }
+    let out = null
+    rep.forEach(r => { if (r.type === 'outbound-rtp' && r.kind === 'video') out = r })
+    if (!out) continue
+    const cur = {
+      fps: Math.round(out.framesPerSecond || 0), w: out.frameWidth || 0, h: out.frameHeight || 0,
+      limit: out.qualityLimitationReason || 'none', impl: out.encoderImplementation || '',
+      codec: (rep.get(out.codecId)?.mimeType || '').replace('video/', '')
+    }
+    if (!worst || cur.fps < worst.fps) worst = cur
+  }
+  sh.stat = worst
+  updateStageInfo()
+  if (!worst || !sh.auto || S.share !== sh) return
+  const target = SHARE_Q[sh.q].fps
+  // durgun bir ekranda kare hızı kendiliğinden düşer; bu yüzden yalnızca tarayıcı "sınırlıyorum" diyorsa sayılır
+  const bad = worst.limit !== 'none' && worst.fps > 0 && worst.fps < target * 0.8
+  sh.bad = bad ? sh.bad + 1 : Math.max(0, sh.bad - 1)
+  if (sh.bad < 4 || Date.now() - sh.lastStep < 15000) return
+  const next = SHARE_LOWER[sh.mode]?.[sh.q]
+  if (!next) return
+  sh.bad = 0
+  sh.lastStep = Date.now()
+  toast('Yayın takıldığı için kalite otomatik düşürüldü: ' + SHARE_Q[next].label + (worst.limit === 'cpu' ? ' (bilgisayar yoğun)' : ' (bağlantı yetersiz)'))
+  changeShareQuality(next)
 }
 
 // Bağlantı kurulurken gönderici henüz hazır olmayabilir, bu yüzden birkaç kez denenir
@@ -1435,8 +1536,14 @@ async function startShare() {
   if (!navigator.mediaDevices?.getDisplayMedia) return toast('Bu tarayıcı ekran paylaşımını desteklemiyor (telefon tarayıcılarının çoğu desteklemez).', 'err')
   const q = isShareQ($('#shareQ').value) ? $('#shareQ').value : '720p60'
   const wantAudio = $('#shareAudio').checked
+  const mode = isShareMode($('#shareMode').value) ? $('#shareMode').value : 'motion'
+  const auto = $('#shareAuto').checked
+  const codec = ['auto', 'vp9', 'vp8'].includes($('#shareCodec').value) ? $('#shareCodec').value : 'auto'
   LS.set('shareQ', q)
   LS.set('shareAudio', wantAudio)
+  LS.set('shareMode', mode)
+  LS.set('shareAuto', auto)
+  LS.set('shareCodec', codec)
   const p = SHARE_Q[q]
 
   let stream
@@ -1444,7 +1551,11 @@ async function startShare() {
     stream = await navigator.mediaDevices.getDisplayMedia({
       video: { width: { ideal: p.w }, height: { ideal: p.h }, frameRate: { ideal: p.fps, max: p.fps } },
       // suppressLocalAudioPlayback bilerek false: true olursa paylaşılan sekmenin sesi paylaşan kişide de kısılır
-      audio: wantAudio ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false } : false
+      // restrictOwnAudio (Chrome/Edge 141+): sistem sesi paylaşılırken Salon sekmesinin kendi sesi (kanaldaki konuşmalar) yayından çıkarılır, yankı olmaz.
+      // windowAudio 'window': pencere seçilince yalnızca o pencerenin sesi (örn. oyun) paylaşılır. systemAudio: tüm ekran seçilince sistem sesi önerilir.
+      audio: wantAudio ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false, restrictOwnAudio: true } : false,
+      ...(wantAudio ? { systemAudio: 'include', windowAudio: 'window' } : {}),
+      surfaceSwitching: 'include'
     })
   } catch (e) {
     if (e?.name === 'NotAllowedError' || e?.name === 'AbortError') return // seçim penceresi kapatıldı
@@ -1459,7 +1570,21 @@ async function startShare() {
   // kanalda başka biri paylaşıyorsa onun yayını kapanır (devralma)
   const current = sharerIn(v.ch)
   const takeover = current && !current.self ? current.id : ''
-  track.contentHint = p.hint
+  track.contentHint = SHARE_MODES[mode].hint
+  const audioTrack = stream.getAudioTracks()[0] || null
+  if (audioTrack) audioTrack.contentHint = 'music' // konuşma işlemesi (gürültü kısma vb.) uygulanmasın
+  if (wantAudio && !audioTrack) {
+    toast('Ses paylaşılamadı. Seçim penceresinde "sistem sesini" ya da "pencere sesini de paylaş" kutusunu işaretlemelisin (Chrome/Edge). Yayın sessiz devam ediyor.', 'err')
+  } else if (audioTrack) {
+    const surface = track.getSettings?.().displaySurface
+    const canRestrict = audioTrack.getSettings?.().restrictOwnAudio === true || !!navigator.mediaDevices.getSupportedConstraints?.().restrictOwnAudio
+    if (surface === 'monitor' && !canRestrict) {
+      toast('Tüm ekran sesi paylaşılıyor. Tarayıcın kanaldaki konuşmaları yayından ayıramıyor, izleyenler yankı duyabilir. Oyun için pencereyi seçmek ya da Chrome/Edge 141+ kullanmak en iyisi.', 'err')
+    }
+  }
+  installCodecHook()
+  codecTrack = track
+  codecPref = codec
 
   let room
   try { room = T.joinRoom(S.cfg, 'screen-' + v.ch, { onJoinError: () => joinProblem() }) } catch (e) {
@@ -1467,7 +1592,7 @@ async function startShare() {
     stream.getTracks().forEach(t => t.stop())
     return toast('Paylaşım odası açılamadı. Birkaç saniye sonra tekrar dene.', 'err')
   }
-  const sh = { stream, track, room, q, takeover, viewers: new Set(), emptySince: Date.now(), warned: false, idle: 0, suggestedFor: 0 }
+  const sh = { stream, track, audioTrack, room, q, mode, auto, takeover, viewers: new Set(), emptySince: Date.now(), warned: false, idle: 0, suggestedFor: 0, stat: null, bad: 0, lastStep: 0, monitor: 0 }
   S.share = sh
   track.addEventListener('ended', () => { if (S.share === sh) stopShare() }) // tarayıcının kendi "paylaşımı durdur" düğmesi
   room.onPeerJoin = id => {
@@ -1485,6 +1610,7 @@ async function startShare() {
     if (!sh.viewers.size) { sh.emptySince = Date.now(); sh.warned = false }
     renderAll()
   }
+  sh.monitor = setInterval(() => pollShare(sh).catch(e => console.warn('yayın istatistiği', e)), 2000)
   // izleyen yoksa paylaşım IDLE_SHARE_MS sonra kendiliğinden kapanır (bir dakika önceden uyarılır)
   sh.idle = setInterval(() => {
     if (S.share !== sh || sh.viewers.size || !sh.emptySince) return
@@ -1506,11 +1632,24 @@ function stopShare(quiet) {
   if (!sh) return
   S.share = null
   clearInterval(sh.idle)
+  clearInterval(sh.monitor)
+  if (codecTrack === sh.track) codecTrack = null
   if (S.watch?.self) closeWatch() // kendi yayınının önizlemesi de kapanır
   try { sh.room.leave() } catch { /* yoksay */ }
   sh.stream.getTracks().forEach(t => t.stop())
   broadcastPresence()
   renderAll()
+}
+
+// Paylaşım sürerken yayın türünü (akıcı / net) değiştirir
+function changeShareMode(mode) {
+  const sh = S.share
+  if (!sh || !isShareMode(mode)) return
+  sh.mode = mode
+  sh.bad = 0
+  LS.set('shareMode', mode)
+  sh.track.contentHint = SHARE_MODES[mode].hint
+  for (const id of sh.viewers) tuneSender(id).catch(e => console.warn('gönderici ayarı', e))
 }
 
 // Paylaşım sürerken kaliteyi değiştirir
@@ -1519,8 +1658,10 @@ async function changeShareQuality(q) {
   if (!sh || !isShareQ(q)) return
   const p = SHARE_Q[q]
   sh.q = q
+  sh.bad = 0
   LS.set('shareQ', q)
-  sh.track.contentHint = p.hint
+  if ($('#shareQ').value !== q) $('#shareQ').value = q
+  updateShareEst()
   try {
     await sh.track.applyConstraints({ width: { ideal: p.w }, height: { ideal: p.h }, frameRate: { ideal: p.fps, max: p.fps } })
   } catch (e) { console.warn('yakalama kalitesi değiştirilemedi', e) }
@@ -1532,7 +1673,7 @@ async function changeShareQuality(q) {
 function updateShareEst() {
   const q = SHARE_Q[$('#shareQ').value] || SHARE_Q['720p60']
   const per = q.kbps / 1000
-  $('#shareEst').textContent = 'Her izleyici için yaklaşık ' + per + ' Mbps yükleme gerekir (3 kişi izlerse ~' + per * 3 + ' Mbps). Bağlantın ya da bilgisayarın yetmezse akış kendiliğinden kalite düşürür; takılırsa kaliteyi azalt. Öneri: 1 izleyici 1080p 60 fps, 2 izleyici 1080p 30 fps, 3 ve üzeri 720p 30 fps.'
+  $('#shareEst').textContent = 'Her izleyici için yaklaşık ' + per + ' Mbps yükleme gerekir (3 kişi izlerse ~' + per * 3 + ' Mbps). Her izleyici için ayrı kodlama yapıldığı için izleyici arttıkça bilgisayar da daha çok yorulur. "Otomatik" açıksa kalite izleyici sayısına ve takılmaya göre kendiliğinden ayarlanır.'
 }
 
 function openShareDlg() {
@@ -1548,6 +1689,12 @@ function openShareDlg() {
   $('#shareQ').value = sharing ? S.share.q : (isShareQ(saved) ? saved : '720p60')
   $('#shareAudio').checked = sharing ? S.share.stream.getAudioTracks().length > 0 : LS.get('shareAudio', false) === true
   $('#shareAudio').disabled = sharing
+  const sm = LS.get('shareMode', 'motion')
+  $('#shareMode').value = sharing ? S.share.mode : (isShareMode(sm) ? sm : 'motion')
+  $('#shareAuto').checked = sharing ? S.share.auto : LS.get('shareAuto', true) !== false
+  const sc = LS.get('shareCodec', 'auto')
+  $('#shareCodec').value = ['auto', 'vp9', 'vp8'].includes(sc) ? sc : 'auto'
+  $('#shareCodec').disabled = sharing // kodek yalnızca yayın başlarken seçilir
   $('#shareCancel').hidden = sharing
   $('#shareStart').hidden = sharing
   $('#shareStop').hidden = !sharing
@@ -1577,6 +1724,12 @@ function updateStageInfo() {
   if (v.videoWidth) parts.push(v.videoWidth + '×' + v.videoHeight)
   if (w.fps) parts.push(w.fps + ' fps')
   if (isShareQ(q)) parts.push('hedef ' + SHARE_Q[q].label)
+  const st = w.self ? S.share?.stat : null
+  if (st?.codec) {
+    parts.push(st.codec + (st.impl ? (isSoftEnc(st.impl) ? ' yazılım' : ' donanım') : ''))
+    if (st.limit === 'cpu') parts.push('işlemci sınırı')
+    else if (st.limit === 'bandwidth') parts.push('bağlantı sınırı')
+  }
   $('#stageInfo').textContent = parts.join(' · ')
 }
 
@@ -2859,6 +3012,8 @@ function wire() {
   // ekran paylaşımı: başlatma penceresi
   $('#shareBtn').addEventListener('click', openShareDlg)
   $('#shareQ').addEventListener('change', e => { updateShareEst(); if (S.share) changeShareQuality(e.target.value) })
+  $('#shareMode').addEventListener('change', e => { if (S.share) changeShareMode(e.target.value) })
+  $('#shareAuto').addEventListener('change', e => { if (S.share) { S.share.auto = e.target.checked; S.share.bad = 0 } LS.set('shareAuto', e.target.checked) })
   $('#shareCancel').addEventListener('click', () => $('#shareDlg').close())
   $('#shareDone').addEventListener('click', () => $('#shareDlg').close())
   $('#shareStop').addEventListener('click', () => { $('#shareDlg').close(); stopShare() })
