@@ -484,11 +484,34 @@
       <p id="shareEst" class="hint"></p>
     </div>
 
+    <div class="field">
+      <label for="shareMode">Yayın türü</label>
+      <select id="shareMode">
+        <option value="motion">Akıcı: oyun, video (önerilen)</option>
+        <option value="detail">Net: belge, kod, yazı</option>
+      </select>
+      <p class="hint">Bilgisayar ya da bağlantı yetmediğinde Akıcı çözünürlüğü, Net kare hızını düşürür.</p>
+    </div>
+
+    <div class="field check">
+      <input id="shareAuto" type="checkbox" checked>
+      <label for="shareAuto">Takılırsa kaliteyi otomatik ayarla</label>
+    </div>
+
+    <div class="field">
+      <label for="shareCodec">Kodek (gelişmiş)</label>
+      <select id="shareCodec">
+        <option value="auto">Otomatik: H.264, ekran kartı destekli (önerilen)</option>
+        <option value="vp9">VP9: daha net, işlemciyi daha çok yorar</option>
+        <option value="vp8">VP8: eski uyumluluk modu</option>
+      </select>
+    </div>
+
     <div class="field check">
       <input id="shareAudio" type="checkbox">
       <label for="shareAudio">Ekran ya da sekme sesini de paylaş</label>
     </div>
-    <p class="hint">Ses paylaşımı Chrome ve Edge'de bir sekme ya da tüm ekran seçilince çalışır. Tüm ekranın sesini paylaşırsan kanaldaki diğer kişilerin sesleri de yayına karışabilir; en iyisi yalnızca sekme sesini paylaşmak.</p>
+    <p class="hint">Ses paylaşımı Chrome ve Edge'de çalışır. Oyun için en iyisi pencereyi seçip "pencere sesini de paylaş" kutusunu işaretlemek: yalnızca o pencerenin sesi gider, kanaldaki konuşmalar yayına karışmaz. Tüm ekranı seçersen "sistem sesini paylaş"ı işaretle; Chrome/Edge 141 ve üstü Salon'un kendi sesini (kanaldaki konuşmalar) yayından otomatik çıkarır, eski sürümlerde yankı olabilir. Sekme seçersen o sekmenin sesi gider.</p>
     <p class="hint">Kanalda aynı anda bir kişi paylaşabilir: yeni başlatan kişi öncekinin yayınını kapatır. Yayın yalnızca "İzle"ye basanlara gider. Kimse izlemezse paylaşım 15 dakika sonra otomatik kapanır.</p>
 
     <div class="row end">
