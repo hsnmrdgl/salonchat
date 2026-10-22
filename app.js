@@ -432,6 +432,8 @@ async function onPresence(d, peerId) {
   }
   S.peers.set(peerId, peer)
   if (entry.admin) S.adminIds.add(peerId); else S.adminIds.delete(peerId)
+  // ilk kez tanıştık: bizim ilk mesajımız karşıya ulaşmamış olabilir, karşılık ver (bir kez; karşı taraf da tanışmışsa cevap zinciri kendiliğinden biter)
+  if (!prev?.ready) { try { A.presence.send(myPresence(), { target: peerId }) } catch { /* yoksay */ } }
 
   if (S.voice) {
     if (peer.ch === S.voice.ch && prev?.ch !== S.voice.ch) tone('join')
@@ -1304,7 +1306,7 @@ async function joinVoice(chId) {
     const chain = await buildMicChain(raw, () => S.settings)
     const stream = chain.stream
 
-    const room = T.joinRoom(S.cfg, 'voice-' + chId, { onJoinError: () => joinProblem() })
+    const room = T.joinRoom(S.cfg, 'voice-' + chId, { onJoinError: joinProblem })
     const v = { ch: chId, room, stream, chain, remotes: new Map(), waiting: new Map() }
     S.voice = v
     S.me.ch = chId
@@ -1587,7 +1589,7 @@ async function startShare() {
   codecPref = codec
 
   let room
-  try { room = T.joinRoom(S.cfg, 'screen-' + v.ch, { onJoinError: () => joinProblem() }) } catch (e) {
+  try { room = T.joinRoom(S.cfg, 'screen-' + v.ch, { onJoinError: joinProblem }) } catch (e) {
     console.warn(e)
     stream.getTracks().forEach(t => t.stop())
     return toast('Paylaşım odası açılamadı. Birkaç saniye sonra tekrar dene.', 'err')
@@ -1779,7 +1781,7 @@ function openWatch(id) {
   if (S.watch?.id === id) { $('#stage').classList.remove('mini'); return }
   closeWatch()
   let room
-  try { room = T.joinRoom(S.cfg, 'screen-' + v.ch, { onJoinError: () => joinProblem() }) } catch (e) {
+  try { room = T.joinRoom(S.cfg, 'screen-' + v.ch, { onJoinError: joinProblem }) } catch (e) {
     console.warn(e)
     return toast('Yayına bağlanılamadı. Birkaç saniye sonra tekrar dene.', 'err')
   }
@@ -2347,11 +2349,22 @@ function toast(text, kind = '') {
   setTimeout(() => t.remove(), kind === 'err' ? 6500 : 3500)
 }
 
+// Trystero bir kişiyle bağlantı kuramayınca çağırır. Tek bir kişinin (eski sekme, kötü ağ) başarısızlığı normaldir ve
+// kendiliğinden yeniden denenir; bu yüzden uyarı yalnızca aynı dakika içinde birkaç farklı kişi için olursa gösterilir.
+// Ayrıntı her zaman konsola yazılır.
+const problemLog = []
 let lastProblem = 0
-function joinProblem() {
-  if (Date.now() - lastProblem < 20000) return
-  lastProblem = Date.now()
-  toast('Bazı kişilerle bağlantı kurulamadı. Sunucu şifresi uyuşmuyor ya da ağın doğrudan bağlantıyı engelliyor olabilir (TURN gerekebilir).', 'err')
+function joinProblem(info) {
+  const err = String(info?.error || '')
+  console.warn('Salon bağlantı sorunu:', err, info?.peerId || '', info?.roomId || '')
+  const now = Date.now()
+  problemLog.push({ t: now, peer: info?.peerId || '', pw: /password/i.test(err) })
+  while (problemLog.length && now - problemLog[0].t > 60000) problemLog.shift()
+  const peers = new Set(problemLog.map(p => p.peer))
+  if (peers.size < 2 || now - lastProblem < 60000) return
+  lastProblem = now
+  if (problemLog.every(p => p.pw)) toast('Bazı kişilerle şifre uyuşmuyor. Onların sayfayı yenilemesi gerekebilir.', 'err')
+  else toast('Bazı kişilerle doğrudan bağlantı kurulamadı. Ağ engelliyor olabilir; yeniden deneniyor.', 'err')
 }
 
 // Röle listesi HERKES İÇİN AYNI olmalı: kişiler birbirini ortak bir röle üzerinden bulur.
@@ -2418,7 +2431,7 @@ async function boot(me) {
   S.live = true
   await loadMessages({ first: true })
 
-  lobby = T.joinRoom(S.cfg, 'lobby', { onJoinError: () => joinProblem() })
+  lobby = T.joinRoom(S.cfg, 'lobby', { onJoinError: joinProblem })
   A.presence = lobby.makeAction('presence')
   A.chat = lobby.makeAction('chat')
   A.mdel = lobby.makeAction('mdel')
@@ -2462,6 +2475,14 @@ async function boot(me) {
   lobby.onPeerJoin = id => {
     if (!S.peers.has(id)) S.peers.set(id, { name: '', ch: null, muted: false, deaf: false, ready: false })
     A.presence.send(myPresence(), { target: id })
+    // karşı taraf henüz hazır değilse ilk mesaj kaybolabilir; 20 sn'lik duyuruyu beklemeden kısa aralıklarla tekrarla
+    for (const ms of [1500, 4000, 9000]) {
+      setTimeout(() => {
+        const p = S.peers.get(id)
+        if (!p || p.ready) return // ayrıldı ya da zaten tanıştık
+        try { A.presence.send(myPresence(), { target: id }) } catch { /* yoksay */ }
+      }, ms)
+    }
     // kimliğimiz karşıda doğrulanana kadar bekle, sonra geçmişi ve susturmaları gönder
     setTimeout(() => {
       if (!S.peers.has(id)) return
