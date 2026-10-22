@@ -14,7 +14,7 @@ export default {
   serverName: 'Salon',
 
   // Sol üstte adın yanında küçük yazıyla görünen sürüm. Her güncellemede elle artır.
-  version: '1.17.0',
+  version: '1.17.1',
 
   // Kanallar. id'ler sabit kalmalı, name istediğin gibi olabilir.
   // adminOnly: true olan metin kanalına sadece yöneticiler yazabilir.
@@ -35,5 +35,10 @@ export default {
   // Bazı ağlarda (okul, şirket, bazı mobil operatörler) doğrudan bağlantı kurulamaz.
   // O durumda ücretsiz bir TURN sunucusu ekle. Örnek:
   // turnConfig: [{ urls: ['turn:sunucu.ornek.com:443'], username: 'kullanici', credential: 'sifre' }]
-  turnConfig: []
+  turnConfig: [],
+
+  // İsteğe bağlı: kendi Nostr röle listen (wss://...). Boş bırakılırsa uygulamanın hazır listesi kullanılır.
+  // DİKKAT: Herkesin listesi aynı olmalı; kişiler birbirini ortak röle üzerinden bulur.
+  // relayUrls: ['wss://nos.lol', 'wss://relay.damus.io'],
+  relayUrls: []
 }
