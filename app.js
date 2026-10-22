@@ -2354,16 +2354,41 @@ function joinProblem() {
   toast('Bazı kişilerle bağlantı kurulamadı. Sunucu şifresi uyuşmuyor ya da ağın doğrudan bağlantıyı engelliyor olabilir (TURN gerekebilir).', 'err')
 }
 
+// Röle listesi HERKES İÇİN AYNI olmalı: kişiler birbirini ortak bir röle üzerinden bulur.
+// Trystero'nun kendi seçimi her istemcide aynı 5 röleyi verir ve bazıları olay türünü reddedip devre dışı kalır;
+// bu yüzden daha geniş, sabit bir liste kullanılır. Reddeden röleler Trystero tarafından otomatik bırakılır.
+const DEFAULT_RELAYS = [
+  'nos.lol', 'relay.damus.io', 'relay.primal.net', 'offchain.pub', 'nostr.mom', 'relay.nostr.band',
+  'nostr.rblb.it', 'relay.nostr.dev.br', 'relay.layer.systems', 'nostr.robosats.org', 'nostr.stakey.net', 'relay.nostrmap.net'
+]
+function relayList() {
+  const own = (CONFIG.relayUrls || []).filter(u => typeof u === 'string' && /^wss:\/\//.test(u))
+  if (own.length) return own
+  return DEFAULT_RELAYS.map(h => 'wss://' + h)
+}
+
 const bootTime = Date.now()
 let relayWarned = false
+let relayLogged = false
 function updateNet() {
   // Bağlantı durumu artık başlıkta gösterilmez; yalnızca uzun süre röleye ulaşılamazsa bir kez uyarılır
   let relays = 1 // getRelaySockets yoksa bağlı varsay
+  let socks = null
   if (typeof T.getRelaySockets === 'function') {
-    try { relays = Object.values(T.getRelaySockets()).filter(s => s.readyState === 1).length } catch { /* yoksay */ }
+    try {
+      socks = T.getRelaySockets()
+      relays = Object.values(socks).filter(s => s.readyState === 1).length
+    } catch { /* yoksay */ }
   }
   if (relays > 0) relayWarned = false
-  else if (!relayWarned && Date.now() - bootTime > 15000) { relayWarned = true; toast('Röleye ulaşılamıyor, bağlantı kurulamıyor.', 'err') }
+  else if (!relayWarned && Date.now() - bootTime > 15000) {
+    relayWarned = true
+    toast('Röle sunucularına ulaşılamıyor. Başka bir ağ (örn. mobil veri) ya da DNS 1.1.1.1 dene, VPN/reklam engelleyiciyi kapat.', 'err')
+    if (socks && !relayLogged) {
+      relayLogged = true
+      console.warn('Salon röle durumu:', Object.fromEntries(Object.entries(socks).map(([u, s]) => [u, ['bağlanıyor', 'açık', 'kapanıyor', 'kapalı'][s.readyState]])))
+    }
+  }
 }
 
 function openSide() { $('#side').classList.add('open'); $('#scrim').hidden = false }
@@ -2384,7 +2409,7 @@ async function boot(me) {
   S.idSig = await signHex(idText(S.id))
   S.admin = me.is_admin === true
   S.code = me.server_password
-  S.cfg = { appId: APP_ID, password: S.code }
+  S.cfg = { appId: APP_ID, password: S.code, relayConfig: { urls: relayList() } }
   if (CONFIG.turnConfig?.length) S.cfg.turnConfig = CONFIG.turnConfig
 
   applyDir(await rpc('salon_directory'))
