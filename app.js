@@ -2357,9 +2357,11 @@ function joinProblem() {
 // Röle listesi HERKES İÇİN AYNI olmalı: kişiler birbirini ortak bir röle üzerinden bulur.
 // Trystero'nun kendi seçimi her istemcide aynı 5 röleyi verir ve bazıları olay türünü reddedip devre dışı kalır;
 // bu yüzden daha geniş, sabit bir liste kullanılır. Reddeden röleler Trystero tarafından otomatik bırakılır.
+// Ünlü röleler (damus, primal, nostr.band) bu amaç için uygun değil: hız sınırı koyuyor, IP yasaklıyor ya da zaman aşımına uğruyor.
+// Aşağıdakiler Trystero'nun kendi önerilen listesinden seçildi.
 const DEFAULT_RELAYS = [
-  'nos.lol', 'relay.damus.io', 'relay.primal.net', 'offchain.pub', 'nostr.mom', 'relay.nostr.band',
-  'nostr.rblb.it', 'relay.nostr.dev.br', 'relay.layer.systems', 'nostr.robosats.org', 'nostr.stakey.net', 'relay.nostrmap.net'
+  'nos.lol', 'nostr.rblb.it', 'relay.nostr.dev.br', 'relay.nostrmap.net',
+  'relay.piazza.today', 'relay.novospes.com', 'relay.bitmacro.cloud', 'relay.routstr.com'
 ]
 function relayList() {
   const own = (CONFIG.relayUrls || []).filter(u => typeof u === 'string' && /^wss:\/\//.test(u))
